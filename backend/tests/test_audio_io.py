@@ -91,3 +91,18 @@ def test_more_than_two_channels_rejected_clearly():
 
 def test_capabilities_reports_truthfully():
     c = audio_io.capabilities(); assert c["ffmpeg"] == (shutil.which("ffmpeg") is not None)
+
+def test_mp3_with_id3_metadata_decodes_cleanly():
+    if not shutil.which("ffmpeg"): pytest.skip("ffmpeg not installed")
+    # Generate MP3 with ID3 metadata tag that creates discrepancy in libsndfile estimated frames
+    with tempfile.TemporaryDirectory() as d:
+        w, o = os.path.join(d, "tone.wav"), os.path.join(d, "tone.mp3")
+        wavfile.write(w, FS, tone(1000, FS, 1.0).astype(np.float32))
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", w, "-metadata", "title=TestToneWithMetadata",
+                        "-metadata", "artist=TestArtist", "-metadata", "comment=" + "X"*5000, "-c:a", "libmp3lame", o], check=True)
+        data = open(o, "rb").read()
+    res = decode_audio(data)
+    assert res["source_format"] == "mp3"
+    assert res["samples"].shape[0] == 1
+    assert abs(res["samples"].shape[1] - FS) <= FS * 0.15
+

@@ -24,16 +24,23 @@ class AudioError(ValueError):
 
 
 def sniff_format(d: bytes) -> str | None:
-    if d[:4] in (b"RIFF", b"RF64") and d[8:12] == b"WAVE": return "wav"
+    if len(d) >= 12 and d[:4] in (b"RIFF", b"RF64") and d[8:12] == b"WAVE": return "wav"
     if d[:4] == b"fLaC": return "flac"
     if d[:4] == b"OggS": return "ogg"
-    if d[:4] == b"FORM" and d[8:12] in (b"AIFF", b"AIFC"): return "aiff"
-    if d[4:8] == b"ftyp": return "m4a"
+    if len(d) >= 12 and d[:4] == b"FORM" and d[8:12] in (b"AIFF", b"AIFC"): return "aiff"
+    if len(d) >= 8 and d[4:8] == b"ftyp": return "m4a"
     if d[:3] == b"ID3" or (len(d) > 2 and d[0] == 0xFF and (d[1] & 0xE0) == 0xE0): return "mp3"
+    if len(d) > 2 and d[0] == 0xFF and (d[1] & 0xF0) == 0xF0: return "aac"
+    max_scan = min(len(d) - 2, 2048)
+    for offset in range(1, max_scan):
+        if d[offset:offset+3] == b"ID3":
+            return "mp3"
+        if d[offset] == 0xFF and (d[offset+1] & 0xE0) == 0xE0:
+            return "mp3"
     return None
 
 
-SUPPORTED = ["wav", "flac", "ogg", "aiff", "mp3", "m4a"]
+SUPPORTED = ["wav", "flac", "ogg", "aiff", "mp3", "m4a", "aac"]
 
 
 def ffmpeg_path() -> str | None:
@@ -65,7 +72,11 @@ def _via_soundfile(data: bytes):
     if info.frames > settings.max_samples:       # check BEFORE decoding
         raise AudioError("recording exceeds the sample limit")
     x, fs = sf.read(io.BytesIO(data), dtype="float64", always_2d=True)
-    if x.shape[0] != info.frames and info.frames > 0:
+    # Lossless uncompressed formats (WAV, AIFF) have exact frame counts declared in headers.
+    # If fewer samples than declared are read, the file was truncated during transmission.
+    # Note: For lossy / container formats (MP3, OGG), libsndfile estimates info.frames from file size,
+    # which differs when ID3 tags, album art (GEOB), or variable bitrate headers are present.
+    if info.format in ("WAV", "AIFF") and info.frames > 0 and x.shape[0] < info.frames:
         raise AudioError("file is truncated: fewer samples than the header declares")
     return x.T.copy(), int(fs), f"{info.format}/{info.subtype}"
 
@@ -104,21 +115,28 @@ def _via_ffmpeg(data: bytes, kind: str):
 def decode_audio(data: bytes) -> dict:
     if len(data) > settings.max_file_bytes:
         raise AudioError(f"file exceeds the {settings.max_file_bytes // 2**20} MB limit")
-    kind = sniff_format(data[:16]) if len(data) >= 16 else None
+    kind = sniff_format(data[:4096]) if len(data) >= 4 else None
     if kind is None:
-        raise AudioError("unrecognised audio content (not WAV, FLAC, OGG, AIFF, MP3 or M4A); the file extension is ignored")
+        raise AudioError("unrecognised audio content (not WAV, FLAC, OGG, AIFF, MP3, AAC or M4A); the file extension is ignored")
     warnings, x, fs, desc = [], None, None, None
     try:
         if sf is not None:
             try:
                 x, fs, desc = _via_soundfile(data)
-            except AudioError:
-                raise
+            except AudioError as ae:
+                if "sample limit" in str(ae) or "exceeds" in str(ae):
+                    raise
+                # If SoundFile had a decoding/truncation error, fall back to FFmpeg if available
+                if not ffmpeg_path():
+                    raise
+                x = None
             except Exception:
-                if kind in ("mp3", "m4a", "ogg", "flac", "aiff"):
+                if kind in ("mp3", "m4a", "aac", "ogg", "flac", "aiff"):
                     x = None
                 elif kind == "wav":
-                    raise
+                    if not ffmpeg_path():
+                        raise
+                    x = None
         if x is None and kind == "wav":
             x, fs, desc = _via_scipy_wav(data)
         if x is None:
@@ -129,7 +147,7 @@ def decode_audio(data: bytes) -> dict:
     except Exception as e:
         raise AudioError(f"{kind.upper()} could not be decoded (corrupt, truncated or unsupported): {type(e).__name__}") from None
     _validate(x, fs)
-    if kind in ("mp3", "m4a", "ogg"):
+    if kind in ("mp3", "m4a", "aac", "ogg"):
         warnings.append("Source is a lossy format; decoded samples differ slightly from the original recording.")
     return {"samples": np.ascontiguousarray(x), "sample_rate": int(fs), "source_format": kind,
             "subtype": desc, "format": kind.upper(), "warnings": warnings}

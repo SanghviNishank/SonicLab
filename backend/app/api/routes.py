@@ -1,5 +1,5 @@
 from __future__ import annotations
-import csv, io, json, time
+import csv, io, json, logging, time
 import numpy as np
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import Response
@@ -13,8 +13,10 @@ from app.processing.siren_detector import DetectorConfig, detect_candidate_siren
 from app.matlab import engine_adapter
 from app.services import store, reports, report_builders as rb
 
+logger = logging.getLogger("signalsystem.api")
+
 router = APIRouter(prefix="/api/v1")
-_MIME = {"wav": "audio/wav", "flac": "audio/flac", "ogg": "audio/ogg", "mp3": "audio/mpeg", "m4a": "audio/mp4", "aiff": "audio/aiff"}
+_MIME = {"wav": "audio/wav", "flac": "audio/flac", "ogg": "audio/ogg", "mp3": "audio/mpeg", "m4a": "audio/mp4", "aac": "audio/aac", "aiff": "audio/aiff"}
 
 
 def _audio(audio_id: str) -> dict:
@@ -55,7 +57,11 @@ async def upload(file: UploadFile = File(...)):
     try:
         dec = audio_io.decode_audio(data)
     except audio_io.AudioError as e:
+        logger.warning("Audio upload rejected for '%s': %s", file.filename, e)
         raise HTTPException(422, str(e))
+    except Exception as e:
+        logger.error("Audio upload failed unexpectedly for '%s': %s", file.filename, e, exc_info=True)
+        raise HTTPException(500, f"Error processing audio upload: {e}")
     x, fs = dec["samples"], dec["sample_rate"]
     audio_id = store.put("audio", {"x": x, "fs": fs, "wav": data, "subtype": dec["subtype"], "source_format": dec["source_format"],
                                 "name": (file.filename or "unnamed")[:120]})

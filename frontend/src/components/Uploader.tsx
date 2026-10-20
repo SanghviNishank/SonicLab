@@ -10,11 +10,21 @@ export default function Uploader({ onDone, onClear }: { onDone: (res: any, file:
 
   async function handle(f: File) {
     setFile(f); setErr(""); setBusy(true);
-    try { onDone(await upload(f), f); } catch (e: any) { setErr(e.message); setFile(null); onClear(); } finally { setBusy(false); }
+    try {
+      const res = await upload(f);
+      onDone(res, f);
+    } catch (e: any) {
+      console.error("Audio upload error:", e);
+      setErr(e.message || "Failed to process audio file");
+      setFile(null);
+      onClear();
+    } finally {
+      setBusy(false);
+    }
   }
   return (
     <section className="card">
-      <h3>1 · Upload audio (WAV, FLAC, MP3, OGG, M4A, AIFF)</h3>
+      <h3>1 · Upload audio (WAV, FLAC, MP3, AAC, M4A, OGG, AIFF)</h3>
       <div className={"drop" + (drag ? " over" : "")} role="button" tabIndex={0}
         onClick={() => input.current?.click()} onKeyDown={(e) => e.key === "Enter" && input.current?.click()}
         onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
