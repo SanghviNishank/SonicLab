@@ -14,14 +14,14 @@ export default function Uploader({ onDone, onClear }: { onDone: (res: any, file:
   }
   return (
     <section className="card">
-      <h3>1 · Upload WAV</h3>
+      <h3>1 · Upload audio (WAV, FLAC, MP3, OGG, M4A, AIFF)</h3>
       <div className={"drop" + (drag ? " over" : "")} role="button" tabIndex={0}
         onClick={() => input.current?.click()} onKeyDown={(e) => e.key === "Enter" && input.current?.click()}
         onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
         onDrop={(e) => { e.preventDefault(); setDrag(false); const f = e.dataTransfer.files[0]; if (f) handle(f); }}>
-        {busy ? "Validating on server…" : "Drop a .wav file here or click to choose"}
+        {busy ? "Validating on server…" : "Drop an audio file here or click to choose"}
       </div>
-      <input ref={input} type="file" accept=".wav,audio/wav" hidden aria-label="Choose WAV file"
+      <input ref={input} type="file" accept=".wav,.flac,.mp3,.ogg,.m4a,.aac,.aif,.aiff,audio/*" hidden aria-label="Choose WAV file"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) handle(f); e.target.value = ""; }} />
       {file && !err && <p className="muted">{file.name} · {(file.size / 1024).toFixed(0)} KB{" "}
         <button className="btn ghost" onClick={() => { setFile(null); onClear(); }}>Remove</button></p>}

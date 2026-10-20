@@ -43,10 +43,10 @@ export default function RoadSonic() {
           </div>
           <button className="btn" disabled={busy} onClick={detect}>{busy ? "Analyzing…" : "Detect candidate events"}</button></section>
         {res && <>
-          <Plot title="Waveform with candidate intervals" data={res.waveform.channels.map((c: any, i: number) => ({ x: c.t, y: c.y, type: "scattergl", mode: "lines", name: `ch${i}` }))}
+          <Plot title="Waveform with candidate intervals" data={res.waveform.channels.map((c: any, i: number) => ({ x: c.t, y: c.y, type: "scatter", mode: "lines", name: `ch${i}` }))}
             layout={{ shapes, xaxis: { title: "Time (s)" } }} />
-          {F && <Plot title="Dominant frequency & tonal ratio" data={[{ x: F.time_s, y: F.dom_freq_hz, type: "scattergl", mode: "markers", marker: { size: 3 }, name: "dominant freq (Hz)" },
-            { x: F.time_s, y: F.tonal_ratio, type: "scattergl", mode: "lines", name: "tonal ratio", yaxis: "y2" }]}
+          {F && <Plot title="Dominant frequency & tonal ratio" data={[{ x: F.time_s, y: F.dom_freq_hz, type: "scatter", mode: "markers", marker: { size: 3 }, name: "dominant freq (Hz)" },
+            { x: F.time_s, y: F.tonal_ratio, type: "scatter", mode: "lines", name: "tonal ratio", yaxis: "y2" }]}
             layout={{ shapes, xaxis: { title: "Time (s)" }, yaxis: { title: "Hz" }, yaxis2: { overlaying: "y", side: "right", range: [0, 1], title: "tonal ratio" } }} />}
           <section className="card"><h3>4 · Candidate events ({res.events.length})</h3>
             {res.events.length === 0 && <p className="muted">No candidate events under these rules. This does not prove no siren is present (see missed-detection limits in the docs).</p>}

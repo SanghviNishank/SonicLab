@@ -20,5 +20,6 @@ npm.cmd run dev                    # http://localhost:5173
 Limits (env-configurable): 50 MB file, 300 s, mono/stereo WAV only, in-memory store with 1 h TTL, max 50 items, single process.
 
 ## Status
-See `docs/` and the chat summary. Implemented and tested: statistics, calibrated FFT, STFT, Butterworth filtering, comparison, rule-based siren detection (37 numerical tests). Written but not yet run: HTTP API tests, frontend, MATLAB functions.
+See `docs/baseline_report.md` (what is verified vs. unverified). FFmpeg is optional but needed for MP3/M4A on SoundFile builds without MP3 support: `winget install Gyan.FFmpeg`.
+ Implemented and tested: statistics, calibrated FFT, STFT, Butterworth filtering, comparison, rule-based siren detection (67 numerical tests incl. multi-format decode and voice pipeline). Written but not yet run: HTTP API tests, frontend, MATLAB functions.
 Not yet done: HTML/PDF report, spectrogram CSV export, event overlay on spectrogram, synchronized A/B playback, academic documents, screenshots.

@@ -56,3 +56,40 @@ def test_roadsonic_detect_and_exports():
 
 def test_unknown_ids_404():
     assert c.get("/api/v1/clearvoice/nope/download").status_code == 404
+
+
+def test_presets_listed():
+    j = c.get("/api/v1/clearvoice/presets").json()
+    assert "speech_clarity" in j["presets"] and "telephone_band" in j["presets"]
+
+def test_voice_pipeline_endpoint_history_quality_and_downloads():
+    from synth import speech_like, noise
+    sp = speech_like(FS, 3.0); x = np.concatenate([np.zeros(int(0.8 * FS)), sp]) + noise(int(3.8 * FS), 1, 0.04)
+    aid = upload(x).json()["metadata"]["audio_id"]
+    r = c.post(f"/api/v1/clearvoice/{aid}/voice", json={"preset": "speech_clarity"})
+    assert r.status_code == 200
+    j = r.json()
+    assert j["quality"]["ok"] and [h["stage"] for h in j["history"]] == ["dc_removal", "rumble_highpass", "noise_reduction"]
+    y, fs = sf.read(io.BytesIO(c.get(f"/api/v1/clearvoice/{j['job_id']}/download").content))
+    assert fs == FS and y.shape[0] == x.size and np.all(np.isfinite(y))
+    y16, _ = sf.read(io.BytesIO(c.get(f"/api/v1/clearvoice/{j['job_id']}/download?subtype=pcm16").content))
+    assert np.max(abs(y16 - y)) < 2e-4
+    assert c.get(f"/api/v1/clearvoice/{j['job_id']}/export?kind=history").json()["history"]
+    assert c.post(f"/api/v1/clearvoice/{aid}/voice", json={"preset": "nope"}).status_code == 422
+
+def test_spectrogram_csv_has_documented_header_and_shape():
+    aid = upload(tone(2000, FS, 1.0)).json()["metadata"]["audio_id"]
+    job = c.post(f"/api/v1/clearvoice/{aid}/filter", json={"filter_type": "lowpass", "cutoff_hz": [4000]}).json()["job_id"]
+    txt = c.get(f"/api/v1/clearvoice/{job}/export?kind=spectrogram_filtered&frame_length=512&hop_length=256").text.splitlines()
+    assert txt[0].startswith("# rows = time frames") and txt[2].split(",")[0] == "time_s" and len(txt[2].split(",")) == 257 + 1
+    assert c.get(f"/api/v1/clearvoice/{job}/export?kind=spectrogram_filtered&channel=5").status_code == 422
+
+def test_pcm16_download_refused_when_it_would_clip():
+    aid = upload(tone(500, FS, 0.5, 0.9)).json()["metadata"]["audio_id"]
+    job = c.post(f"/api/v1/clearvoice/{aid}/voice", json={"preset": "manual", "overrides": {"loudness": {"enabled": True, "target_peak_dbfs": 0.0}}}).json()["job_id"]
+    assert c.get(f"/api/v1/clearvoice/{job}/download?subtype=pcm16").status_code == 409     # peak exactly full scale
+    assert c.get(f"/api/v1/clearvoice/{job}/download").status_code == 200                   # float32 is always allowed
+
+def test_health_reports_audio_capabilities():
+    j = c.get("/api/v1/health").json()
+    assert "ffmpeg" in j["audio_io"] and "soundfile" in j["audio_io"]

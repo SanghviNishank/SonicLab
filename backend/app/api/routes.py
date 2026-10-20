@@ -7,12 +7,13 @@ from pydantic import BaseModel, Field
 
 from app.core.config import settings
 from app.processing import audio_io, statistics as st, fft_analysis as fa, spectrogram as sg
-from app.processing import filters as flt, comparison as cmp
+from app.processing import filters as flt, comparison as cmp, voice as vc
 from app.processing.siren_features import extract_features
 from app.processing.siren_detector import DetectorConfig, detect_candidate_sirens
 from app.services import store
 
 router = APIRouter(prefix="/api/v1")
+_MIME = {"wav": "audio/wav", "flac": "audio/flac", "ogg": "audio/ogg", "mp3": "audio/mpeg", "m4a": "audio/mp4", "aiff": "audio/aiff"}
 
 
 def _audio(audio_id: str) -> dict:
@@ -43,7 +44,7 @@ def _downsample_spec(freqs, amp, max_points=6000):
 
 @router.get("/health")
 def health():
-    return {"status": "ok", "engine": "python-scipy", "matlab_engine": "not used (see docs/matlab_setup.md)",
+    return {"status": "ok", "audio_io": audio_io.capabilities(), "engine": "python-scipy", "matlab_engine": "not used (see docs/matlab_setup.md)",
             "limits": {"max_file_mb": settings.max_file_bytes // 2**20, "max_duration_s": settings.max_duration_s}}
 
 
@@ -51,20 +52,22 @@ def health():
 async def upload(file: UploadFile = File(...)):
     data = await file.read(settings.max_file_bytes + 1)
     try:
-        dec = audio_io.decode_wav(data)
+        dec = audio_io.decode_audio(data)
     except audio_io.AudioError as e:
         raise HTTPException(422, str(e))
     x, fs = dec["samples"], dec["sample_rate"]
-    audio_id = store.put("audio", {"x": x, "fs": fs, "wav": data, "subtype": dec["subtype"]})
+    audio_id = store.put("audio", {"x": x, "fs": fs, "wav": data, "subtype": dec["subtype"], "source_format": dec["source_format"]})
     meta = {"audio_id": audio_id, "sample_rate_hz": fs, "channels": x.shape[0], "samples_per_channel": x.shape[1],
-            "duration_s": x.shape[1] / fs, "sample_format": dec["subtype"], "decoded_dtype": "float64"}
+            "duration_s": x.shape[1] / fs, "sample_format": dec["subtype"], "decoded_dtype": "float64",
+            "source_format": dec["source_format"], "decoder_warnings": dec["warnings"]}
     return {"metadata": meta, "statistics": st.audio_statistics(x, fs), "waveform": _wave_payload(x, fs)}
 
 
 @router.get("/audio/{audio_id}/file")
 def original_file(audio_id: str):
     a = _audio(audio_id)
-    return Response(a["wav"], media_type="audio/wav", headers={"Content-Disposition": 'attachment; filename="original.wav"'})
+    return Response(a["wav"], media_type=_MIME.get(a["source_format"], "application/octet-stream"),
+                    headers={"Content-Disposition": f'attachment; filename="original.{a["source_format"]}"'})
 
 
 class AnalyzeReq(BaseModel):
@@ -132,7 +135,8 @@ def filter_audio(audio_id: str, req: FilterReq):
     resp = r["response"]
     sub = np.unique(np.linspace(0, resp["freqs_hz"].size - 1, 600).astype(int))
     job = store.put("job", {"y": y, "fs": fs, "config": r["config"], "metrics": metrics, "warnings": r["warnings"],
-                            "wav": audio_io.encode_wav(y, fs), "before": before["spectrum"], "after": after["spectrum"]})
+                            "wav": audio_io.encode_wav(y, fs, "float32")[0], "x": x,
+                            "wav_pcm16": audio_io.encode_wav(y, fs, "pcm16"), "before": before["spectrum"], "after": after["spectrum"]})
     return {"job_id": job, "config": r["config"], "warnings": r["warnings"], "metrics": metrics,
             "response": {"freqs_hz": resp["freqs_hz"][sub].tolist(), "magnitude_db": resp["magnitude_db"][sub].tolist(),
                          "effective": resp["effective"]},
@@ -140,6 +144,42 @@ def filter_audio(audio_id: str, req: FilterReq):
             "spectrum_original": before["spectrum"], "spectrum_filtered": after["spectrum"],
             "spectrogram_original": before["spectrogram"], "spectrogram_filtered": after["spectrogram"],
             "wav_format": "32-bit float WAV, no clipping or normalisation applied"}
+
+
+class VoiceReq(BaseModel):
+    preset: str | None = "speech_clarity"
+    overrides: dict = {}
+    analysis: AnalyzeReq = AnalyzeReq()
+
+
+@router.get("/clearvoice/presets")
+def presets():
+    return {"presets": {k: v["description"] for k, v in vc.PRESETS.items()}, "defaults": vc.DEFAULT_CONFIG,
+            "notes": "A filter is not a denoiser. Presets are fixed parameter sets, not guarantees; quality is not verified for natural speech."}
+
+
+@router.post("/clearvoice/{audio_id}/voice")
+def voice(audio_id: str, req: VoiceReq):
+    a = _audio(audio_id)
+    x, fs = a["x"], a["fs"]
+    try:
+        r = vc.run_voice_pipeline(x, fs, req.preset, req.overrides)
+        y = r["output"]
+        metrics = cmp.compare_signals(x, y)
+        before = _analysis(x, fs, req.analysis); after = _analysis(y, fs, req.analysis)
+    except ValueError as e:                                   # includes FilterError
+        raise HTTPException(422, str(e))
+    cfg = {"pipeline": "voice", "preset": r["preset"], "stages": r["config"], "sample_rate": float(fs), "engine": r["engine"]}
+    job = store.put("job", {"y": y, "x": x, "fs": fs, "config": cfg, "metrics": metrics, "warnings": r["warnings"],
+                            "history": r["history"], "quality": r["quality"],
+                            "wav": audio_io.encode_wav(y, fs, "float32")[0], "wav_pcm16": audio_io.encode_wav(y, fs, "pcm16"),
+                            "before": before["spectrum"], "after": after["spectrum"]})
+    return {"job_id": job, "config": cfg, "history": r["history"], "quality": r["quality"], "warnings": r["warnings"],
+            "metrics": metrics, "bypass_note": "Compare against the original with the A/B players; the original is never modified.",
+            "waveform_original": _wave_payload(x, fs), "waveform_filtered": _wave_payload(y, fs),
+            "spectrum_original": before["spectrum"], "spectrum_filtered": after["spectrum"],
+            "spectrogram_original": before["spectrogram"], "spectrogram_filtered": after["spectrogram"],
+            "wav_format": "float32 WAV by default; ?subtype=pcm16 for the most compatible 16-bit file (refused if it would clip)"}
 
 
 def _job(job_id: str) -> dict:
@@ -150,13 +190,20 @@ def _job(job_id: str) -> dict:
 
 
 @router.get("/clearvoice/{job_id}/download")
-def download(job_id: str):
-    return Response(_job(job_id)["wav"], media_type="audio/wav",
+def download(job_id: str, subtype: str = "float32"):
+    j = _job(job_id)
+    if subtype == "float32": body = j["wav"]
+    elif subtype == "pcm16":
+        body, info = j["wav_pcm16"]
+        if info["clipped_samples"]:
+            raise HTTPException(409, f"PCM16 export would clip {info['clipped_samples']} samples; download float32 instead")
+    else: raise HTTPException(422, "subtype must be float32 or pcm16")
+    return Response(body, media_type="audio/wav",
                     headers={"Content-Disposition": 'attachment; filename="clearvoice_filtered.wav"'})
 
 
 @router.get("/clearvoice/{job_id}/export")
-def export(job_id: str, kind: str = "metadata"):
+def export(job_id: str, kind: str = "metadata", channel: int = 0, frame_length: int = 1024, hop_length: int = 512):
     j = _job(job_id)
     if kind == "metadata":
         return Response(json.dumps({"config": j["config"], "metrics": j["metrics"], "warnings": j["warnings"]}, indent=2),
@@ -165,10 +212,32 @@ def export(job_id: str, kind: str = "metadata"):
         s = j["before" if kind.endswith("original") else "after"]
         rows = [{"freq_hz": f, "amplitude": a} for f, a in zip(s["freqs_hz"], s["amplitude"])]
         return Response(_csv(rows), media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{kind}.csv"'})
+    if kind == "history":
+        return Response(json.dumps({"config": j["config"], "history": j.get("history", []), "quality": j.get("quality")}, indent=2),
+                        media_type="application/json", headers={"Content-Disposition": 'attachment; filename="processing_history.json"'})
+    if kind in ("spectrogram_original", "spectrogram_filtered"):
+        sig = j["x"] if kind.endswith("original") else j["y"]
+        if not 0 <= channel < sig.shape[0]:
+            raise HTTPException(422, "channel out of range")
+        try:
+            S = sg.stft_db(sig[channel], j["fs"], frame_length, hop_length)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        n_cells = S["magnitude_db"].size
+        if n_cells > 3_000_000:
+            raise HTTPException(413, f"spectrogram has {n_cells} cells (limit 3,000,000); increase hop_length")
+        hdr = ["# rows = time frames (centre time, s); columns = frequency bins (Hz); values = dB re full-scale single-sided amplitude",
+               f"# frame_length={S['frame_length']} hop_length={S['hop_length']} window={S['window']} channel={channel}"]
+        buf = io.StringIO(); buf.write("\n".join(hdr) + "\n")
+        w = csv.writer(buf); w.writerow(["time_s"] + [f"{f:.3f}" for f in S["freqs_hz"]])
+        for i, t in enumerate(S["times_s"]):
+            w.writerow([f"{t:.6f}"] + [f"{v:.2f}" for v in S["magnitude_db"][:, i]])
+        return Response(buf.getvalue(), media_type="text/csv",
+                        headers={"Content-Disposition": f'attachment; filename="{kind}.csv"'})
     if kind == "metrics":
         rows = [{"channel": i, **m} for i, m in enumerate(j["metrics"]["per_channel"])]
         return Response(_csv(rows), media_type="text/csv", headers={"Content-Disposition": 'attachment; filename="metrics.csv"'})
-    raise HTTPException(422, "kind must be metadata, metrics, spectrum_original or spectrum_filtered")
+    raise HTTPException(422, "kind must be metadata, history, metrics, spectrum_original/filtered or spectrogram_original/filtered")
 
 
 class DetectReq(BaseModel):

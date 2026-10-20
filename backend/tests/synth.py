@@ -18,3 +18,23 @@ def noise(n, seed=0, amp=0.1):
 def traffic_like(n, fs=16000, seed=1, amp=0.3):
     from scipy.signal import butter, sosfilt
     return sosfilt(butter(4, 400 / (fs / 2), output="sos"), noise(n, seed, 1.0)) * amp
+
+
+def speech_like(fs=16000, dur=3.0, seed=0):
+    """Synthetic voiced 'speech': glottal pulse train (f0 glides 110->140 Hz) through three formant
+    resonators (700/1220/2600 Hz), with ~4 Hz syllabic amplitude modulation. Test signal only -
+    it does NOT prove anything about natural-speech quality."""
+    from scipy.signal import lfilter
+    n = int(fs * dur)
+    t = np.arange(n) / fs
+    f0 = 110 + 30 * t / dur
+    ph = np.cumsum(f0) / fs
+    src = (np.diff(np.floor(ph), prepend=0) > 0).astype(float)           # impulse train
+    src = lfilter([1.0], [1.0, -0.97], src)                               # spectral tilt
+    y = np.zeros(n)
+    for fc, bw in ((700, 90), (1220, 110), (2600, 160)):
+        r = np.exp(-np.pi * bw / fs); th = 2 * np.pi * fc / fs
+        y += lfilter([1 - r], [1, -2 * r * np.cos(th), r * r], src)
+    env = 0.55 + 0.45 * np.sin(2 * np.pi * 4 * t) ** 2
+    y *= env
+    return 0.5 * y / np.max(np.abs(y))
