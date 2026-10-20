@@ -1,0 +1,363 @@
+{
+  "input": {
+    "file": "Row_Four_at_Midnight.mp3",
+    "format": "mp3",
+    "decoded_as": "MP3 decoded by FFmpeg -> float32",
+    "sample_rate_hz": 44100,
+    "channels": 2,
+    "samples_per_channel": 2634624,
+    "duration_s": 59.74204081632653,
+    "stats": {
+      "sample_rate": 44100.0,
+      "channels": 2,
+      "samples_per_channel": 2634624,
+      "duration_s": 59.74204081632653,
+      "variance_definition": "population (ddof=0)",
+      "per_channel": [
+        {
+          "min": -0.9837000370025635,
+          "max": 0.9871737957000732,
+          "mean": 0.004356924981144013,
+          "rms": 0.1938178736227837,
+          "variance": 0.037546385340366036,
+          "peak_abs": 0.9871737957000732,
+          "peak_to_peak": 1.9708738327026367,
+          "crest_factor": 5.093306294451209,
+          "clipped_samples": 0,
+          "silent_window_fraction": 0.022613065326633167
+        },
+        {
+          "min": -0.9809920787811279,
+          "max": 0.9942654371261597,
+          "mean": 0.00392449460109583,
+          "rms": 0.19305983084847456,
+          "variance": 0.03725669662936757,
+          "peak_abs": 0.9942654371261597,
+          "peak_to_peak": 1.9752575159072876,
+          "crest_factor": 5.150037854878892,
+          "clipped_samples": 0,
+          "silent_window_fraction": 0.02512562814070352
+        }
+      ],
+      "warnings": []
+    },
+    "band_energy_fraction": {
+      "20-60": 0.0865203864734756,
+      "60-120": 0.6227199774877865,
+      "120-250": 0.12866095639689049,
+      "250-500": 0.10438345970126568,
+      "500-1000": 0.035201999736917074,
+      "1000-2000": 0.012436042141329161,
+      "2000-4000": 0.006805498040387071,
+      "4000-8000": 0.0023267963150769306,
+      "8000-16000": 0.0002133739976043062
+    },
+    "peaks": [
+      {
+        "frequency_hz": 82.80079356374182,
+        "amplitude": 0.05826672374291861
+      },
+      {
+        "frequency_hz": 82.22726532703884,
+        "amplitude": 0.051453811831950774
+      },
+      {
+        "frequency_hz": 92.76616570794593,
+        "amplitude": 0.04352113545275457
+      },
+      {
+        "frequency_hz": 82.6113931998416,
+        "amplitude": 0.03660444797418509
+      },
+      {
+        "frequency_hz": 104.2651081902624,
+        "amplitude": 0.0351454555646209
+      }
+    ],
+    "over_full_scale_samples": 0,
+    "freq_resolution_hz": 0.042057037353515625,
+    "stereo": {
+      "lr_correlation": 0.9226805864693987
+    },
+    "speech_like_frames": {
+      "fraction": 0.8305175650308394,
+      "segments": 5,
+      "note": "speech-LIKE frames (loud + periodic); does not identify the speaker and cannot separate speech from music"
+    },
+    "frame_energy_db_percentiles_5_25_50_75_95": [
+      -55.0,
+      -22.9,
+      -17.0,
+      -14.2,
+      -7.4
+    ]
+  },
+  "processing": {
+    "preset": "lecture_speech",
+    "seconds": 2.9130167961120605,
+    "history": [
+      {
+        "stage": "dc_removal",
+        "params": {
+          "per_channel_mean_removed": [
+            0.004356924981144013,
+            0.00392449460109583
+          ]
+        },
+        "engine": "python-scipy",
+        "peak": 0.9903409425250639,
+        "rms": 0.1933947801386242
+      },
+      {
+        "stage": "rumble_highpass",
+        "params": {
+          "filter_type": "highpass",
+          "order": 4,
+          "cutoff_hz": [
+            80.0
+          ],
+          "method": "zero_phase",
+          "sample_rate": 44100.0,
+          "nyquist_hz": 22050.0,
+          "design": "Butterworth, second-order sections",
+          "engine": "python-scipy",
+          "edge_effect_samples_estimate": 2205
+        },
+        "engine": "python-scipy",
+        "peak": 1.0171332738211414,
+        "rms": 0.14183987472953982
+      },
+      {
+        "stage": "noise_reduction",
+        "params": {
+          "method": "wiener",
+          "strength": 0.7,
+          "max_reduction_db": 18.0,
+          "noise_estimate": "adaptive minimum-statistics tracking",
+          "mean_gain_db": [
+            -6.152755537608873,
+            -6.143235499389444
+          ],
+          "frame_length": 2048
+        },
+        "engine": "python-scipy",
+        "peak": 0.9729303239545787,
+        "rms": 0.1232867658291768
+      },
+      {
+        "stage": "speech_gate",
+        "params": {
+          "attenuation_db": 10.0,
+          "speech_fraction": 0.8219361759184768,
+          "segments": 6,
+          "vad": {
+            "min_snr_db": 10.0,
+            "min_periodicity": 0.5,
+            "hangover_s": 0.25,
+            "min_speech_s": 0.15,
+            "floor_percentile": 10.0
+          },
+          "note": "speech-LIKE frames (loud + periodic); does not identify the speaker and cannot separate speech from music"
+        },
+        "engine": "python-scipy",
+        "peak": 0.972930323954615,
+        "rms": 0.1212143039700047
+      },
+      {
+        "stage": "peak_guard",
+        "params": {
+          "ceiling_dbfs": -0.5,
+          "applied_gain_db": -0.2616347908648332,
+          "note": "static gain reduction because the peak exceeded the ceiling (filter overshoot or boost); reported, not hidden"
+        },
+        "engine": "python-scipy",
+        "peak": 0.9440608762859234,
+        "rms": 0.11761755102788737
+      }
+    ],
+    "quality": {
+      "ok": true,
+      "issues": [],
+      "peak": 0.9440608762859234,
+      "rms": 0.11761755102788737,
+      "rms_input": 0.19343922355988064,
+      "rms_change_db": -4.321448156282508,
+      "clipped_samples": 0,
+      "duration_s": 59.74204081632653,
+      "sample_rate": 44100,
+      "channels": 2
+    },
+    "warnings": [
+      "Quality is measured with signal statistics only; subjective speech quality/intelligibility is not verified."
+    ],
+    "engine": "python-scipy"
+  },
+  "output": {
+    "stats": {
+      "sample_rate": 44100.0,
+      "channels": 2,
+      "samples_per_channel": 2634624,
+      "duration_s": 59.74204081632653,
+      "variance_definition": "population (ddof=0)",
+      "per_channel": [
+        {
+          "min": -0.9440608762859234,
+          "max": 0.9056597384778844,
+          "mean": 6.387024676667488e-07,
+          "rms": 0.11817783532254623,
+          "variance": 0.013966000761114917,
+          "peak_abs": 0.9440608762859234,
+          "peak_to_peak": 1.849720614763808,
+          "crest_factor": 7.988476635312115,
+          "clipped_samples": 0,
+          "silent_window_fraction": 0.07872696817420435
+        },
+        {
+          "min": -0.9249469017330701,
+          "max": 0.8919288889267631,
+          "mean": 7.006784796864459e-07,
+          "rms": 0.1170545849510925,
+          "variance": 0.013701775857581576,
+          "peak_abs": 0.9249469017330701,
+          "peak_to_peak": 1.8168757906598332,
+          "crest_factor": 7.901842564471349,
+          "clipped_samples": 0,
+          "silent_window_fraction": 0.08375209380234507
+        }
+      ],
+      "warnings": []
+    },
+    "band_energy_fraction": {
+      "20-60": 0.0013663961125058915,
+      "60-120": 0.37499628943187807,
+      "120-250": 0.27946593169574924,
+      "250-500": 0.21711528780140568,
+      "500-1000": 0.0773811540948506,
+      "1000-2000": 0.02834988139241317,
+      "2000-4000": 0.015629801382352416,
+      "4000-8000": 0.005192035580327219,
+      "8000-16000": 0.0004130314168294878
+    },
+    "peaks": [
+      {
+        "frequency_hz": 92.76702219437455,
+        "amplitude": 0.025779839038174754
+      },
+      {
+        "frequency_hz": 92.578236790421,
+        "amplitude": 0.021610254354734144
+      },
+      {
+        "frequency_hz": 104.26667584543057,
+        "amplitude": 0.01829577430929599
+      },
+      {
+        "frequency_hz": 93.15074719779174,
+        "amplitude": 0.015702045465178855
+      },
+      {
+        "frequency_hz": 82.80356140736859,
+        "amplitude": 0.01514362524602089
+      }
+    ],
+    "over_full_scale_samples": 0,
+    "freq_resolution_hz": 0.042057037353515625
+  },
+  "verification": {
+    "file": "/home/claude/an/ClearVoice_filtered.wav",
+    "sample_rate_ok": true,
+    "shape_ok": true,
+    "max_abs_error_vs_in_memory_result": 1.5258787458521765e-05,
+    "tolerance": 3.0517578125e-05,
+    "matches_processed_samples": true,
+    "differs_from_input_rms": 0.1144585430748907,
+    "is_copy_of_input": false,
+    "finite": true,
+    "peak": 0.944061279296875,
+    "clipped_samples_in_encoding": 0,
+    "subtype": "pcm16"
+  },
+  "figures": [
+    "processed_waveform_spectrum.png",
+    "processed_spectrograms.png",
+    "existing_output_waveform_spectrum.png",
+    "existing_output_spectrograms.png"
+  ],
+  "existing_output": {
+    "file": "clearvoice_filtered.wav",
+    "stats": {
+      "sample_rate": 44100.0,
+      "channels": 2,
+      "samples_per_channel": 2634624,
+      "duration_s": 59.74204081632653,
+      "variance_definition": "population (ddof=0)",
+      "per_channel": [
+        {
+          "min": -1.0162936449050903,
+          "max": 0.9436841011047363,
+          "mean": -6.470388438636792e-08,
+          "rms": 0.14088434499735647,
+          "variance": 0.019848398665329975,
+          "peak_abs": 1.0162936449050903,
+          "peak_to_peak": 1.9599777460098267,
+          "crest_factor": 7.213673349754793,
+          "clipped_samples": 8,
+          "silent_window_fraction": 0.052763819095477386
+        },
+        {
+          "min": -1.008547306060791,
+          "max": 0.9455362558364868,
+          "mean": -6.900604695299884e-08,
+          "rms": 0.14018851801416907,
+          "variance": 0.019652820583004247,
+          "peak_abs": 1.008547306060791,
+          "peak_to_peak": 1.9540835618972778,
+          "crest_factor": 7.194221897394304,
+          "clipped_samples": 5,
+          "silent_window_fraction": 0.059463986599664995
+        }
+      ],
+      "warnings": [
+        "Channel 0: 8 samples at/near full scale (possible clipping).",
+        "Channel 1: 5 samples at/near full scale (possible clipping)."
+      ]
+    },
+    "band_energy_fraction": {
+      "20-60": 0.0010267435766450252,
+      "60-120": 0.4528345144120251,
+      "120-250": 0.23892399059170893,
+      "250-500": 0.20108436259335,
+      "500-1000": 0.06693432602808624,
+      "1000-2000": 0.022997688937913756,
+      "2000-4000": 0.011923204141415745,
+      "4000-8000": 0.0038077869323285348,
+      "8000-16000": 0.0003602927595845399
+    },
+    "peaks": [
+      {
+        "frequency_hz": 82.80077213959164,
+        "amplitude": 0.03297124280059247
+      },
+      {
+        "frequency_hz": 92.76623325845745,
+        "amplitude": 0.033237371515314494
+      },
+      {
+        "frequency_hz": 104.26507925578085,
+        "amplitude": 0.03128645811367312
+      },
+      {
+        "frequency_hz": 82.22729960171797,
+        "amplitude": 0.028379758387018412
+      },
+      {
+        "frequency_hz": 92.57768322541926,
+        "amplitude": 0.02699379986890704
+      }
+    ],
+    "over_full_scale_samples": 12,
+    "freq_resolution_hz": 0.042057037353515625,
+    "rms_difference_from_input": 0.09384517293341632,
+    "rms_difference_from_new_output": 0.04262886579019824
+  }
+}

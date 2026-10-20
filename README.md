@@ -506,3 +506,18 @@ pytest tests/test_api.py
    * *Mean Squared Error (MSE)*: Measures total energy deviation between the processed and original signal: $\text{MSE} = \frac{1}{N} \sum_{n=0}^{N-1} (x[n] - y[n])^2$. A lower MSE does not imply higher audio quality—it simply measures signal difference.
    * *Signal-to-Noise Ratio (SNR)*: SNR improvements are reported only in synthetic test benchmarks with a known ground-truth clean signal. Computing SNR on real-world recordings without reference clean audio is mathematically ungrounded.
 
+<<<<<<< HEAD
+=======
+
+
+## Voice enhancement presets and the command-line tool
+`lecture_speech` (new): DC removal, 80 Hz high-pass, adaptive Wiener noise tracking, gentle attenuation of non-speech intervals, peak guard. It reduces steady/slowly varying noise; it does **not** remove music or other talkers and cannot identify a speaker.
+
+Analyse + process + verify a file from PowerShell (backend venv active):
+```powershell
+cd backend
+python ..\scripts\analyze_and_process.py --input C:\path\recording.mp3 --preset lecture_speech --output ClearVoice_filtered.wav --outdir ..\docs\analysis
+# optional: --compare old_output.wav   --reference professor_voice.wav
+```
+It writes `analysis.json` + figures and re-opens the WAV to prove it contains the processed samples. See `docs/analysis/analysis_report.md` for the report on the uploaded recording.
+>>>>>>> 588a8a1 (backend code updated)

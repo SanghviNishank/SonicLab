@@ -21,3 +21,5 @@ input,select { min-height:44px; padding:.4rem; border-radius:8px; border:1px sol
 @media (prefers-reduced-motion: reduce) { * { transition:none !important; animation:none !important; } }
 
 .chart { min-width:0; overflow:hidden; } .chart .js-plotly-plot, .chart .plot-container { max-width:100%; }
+
+label.inline { flex-direction:row; align-items:center; gap:.5rem; }

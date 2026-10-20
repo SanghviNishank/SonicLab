@@ -24,3 +24,10 @@ Run for real on your machine with `pytest` (see README). `tests/test_api.py` (16
 
 ## Open
 Premium redesign (design tokens exist only in a basic form), mobile bottom navigation, frontend tests, A/B synchronized playback and gain-matched listening, resizable panels, output-sample-rate selection, threshold-tuning experiments on real recordings, ML extension (no licensed dataset used), screenshots, final end-to-end run.
+
+
+## Update: voice-enhancement correction (this iteration)
+Verified (sandbox): 110 tests pass (87 uploaded-state + 23 new: VAD 7, Wiener/gate/guard/preset 16). New: `vad.py`, `enhance.py`, `lecture_speech` preset, `peak_guard` (default on), strict MPEG sniffing, WAV truncation check restored, `scripts/analyze_and_process.py`.
+Measured on synthetic speech + white noise only: lecture_speech improves SNR vs the known clean signal by about 6-9 dB (input 11.3/7.8/3.4/-2.6 dB -> 17.6/15.4/12.0/6.8 dB). VAD finds all four known intervals at 13 dB and 5 dB input SNR, fails at about -7 dB (documented test), and flags sustained periodic music as speech-like (documented test).
+Unverified: frontend changes (advanced panel, reset, processing time) - not built here; the 2 new API tests (need FastAPI); MATLAB.
+Found during testing: the synthetic `speech_like` generator has 28 % of its energy below 70 Hz (DC amplified by the tilt filter), which made a rumble high-pass look harmful; `speech_like_realistic` removes it. Earlier synthetic SNR figures that used plain gating without a high-pass are unaffected.

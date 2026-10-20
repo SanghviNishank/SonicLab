@@ -26,6 +26,8 @@ def test_rejects_non_wav_and_corrupt():
     assert c.post("/api/v1/audio/upload", files={"file": ("a.wav", b"hello world" * 20, "audio/wav")}).status_code == 422
     good = wav_bytes(tone(500))
     assert c.post("/api/v1/audio/upload", files={"file": ("a.wav", good[:30], "audio/wav")}).status_code == 422
+    r = c.post("/api/v1/audio/upload", files={"file": ("a.wav", good[:100], "audio/wav")})      # header ok, audio cut off
+    assert r.status_code == 422 and "truncated" in r.json()["detail"]
 
 def test_filter_roundtrip_download_readback():
     x = tone(300, FS) + tone(4000, FS)
@@ -93,3 +95,27 @@ def test_pcm16_download_refused_when_it_would_clip():
 def test_health_reports_audio_capabilities():
     j = c.get("/api/v1/health").json()
     assert "ffmpeg" in j["audio_io"] and "soundfile" in j["audio_io"]
+
+
+def test_lecture_speech_preset_endpoint_reports_time_history_and_improves_snr():
+    from synth import speech_like_realistic, noise
+    segs = []
+    for i in range(4): segs += [speech_like_realistic(FS, 1.5, i), np.zeros(int(0.7 * FS))]
+    clean = np.concatenate([np.zeros(FS // 2)] + segs); noisy = clean + noise(clean.size, 0, 0.03)
+    aid = upload(noisy).json()["metadata"]["audio_id"]
+    j = c.post(f"/api/v1/clearvoice/{aid}/voice", json={"preset": "lecture_speech"}).json()
+    assert j["processing_s"] > 0 and "speech_gate" in [h["stage"] for h in j["history"]]
+    y, fs = sf.read(io.BytesIO(c.get(f"/api/v1/clearvoice/{j['job_id']}/download").content))
+    snr = lambda ref, z: 10 * np.log10(np.sum(ref ** 2) / np.sum((z[:ref.size] - ref) ** 2))
+    assert fs == FS and snr(clean, y) > snr(clean, noisy) + 2.0
+    assert not np.array_equal(y, noisy)                          # not a copy of the input
+
+def test_reprocessing_gives_new_job_and_download_matches_latest_settings():
+    aid = upload(tone(300, FS) + tone(4000, FS)).json()["metadata"]["audio_id"]
+    j1 = c.post(f"/api/v1/clearvoice/{aid}/filter", json={"filter_type": "lowpass", "order": 6, "cutoff_hz": [1000]}).json()
+    j2 = c.post(f"/api/v1/clearvoice/{aid}/filter", json={"filter_type": "highpass", "order": 6, "cutoff_hz": [1000]}).json()
+    assert j1["job_id"] != j2["job_id"]
+    y1, _ = sf.read(io.BytesIO(c.get(f"/api/v1/clearvoice/{j1['job_id']}/download").content))
+    y2, _ = sf.read(io.BytesIO(c.get(f"/api/v1/clearvoice/{j2['job_id']}/download").content))
+    s = lambda z, f: abs(np.fft.rfft(z[500:-500] * np.hanning(z.size - 1000)))[int(f * (z.size - 1000) / FS)]
+    assert s(y1, 300) > 100 * s(y1, 4000) and s(y2, 4000) > 100 * s(y2, 300)     # each download is its own latest result

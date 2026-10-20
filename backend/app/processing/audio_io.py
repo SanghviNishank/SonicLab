@@ -23,19 +23,24 @@ class AudioError(ValueError):
     pass
 
 
+def _mpeg_sync(d: bytes, i: int) -> bool:
+    """True if d[i:i+3] looks like a VALID MPEG audio frame header (not just 11 sync bits)."""
+    if i + 3 > len(d): return False
+    b1, b2, b3 = d[i], d[i + 1], d[i + 2]
+    return (b1 == 0xFF and (b2 & 0xE0) == 0xE0 and ((b2 >> 3) & 3) != 1     # version != reserved
+            and ((b2 >> 1) & 3) != 0 and (b3 >> 4) != 0xF and ((b3 >> 2) & 3) != 3)   # layer, bitrate, samplerate valid
+
+
 def sniff_format(d: bytes) -> str | None:
     if len(d) >= 12 and d[:4] in (b"RIFF", b"RF64") and d[8:12] == b"WAVE": return "wav"
     if d[:4] == b"fLaC": return "flac"
     if d[:4] == b"OggS": return "ogg"
     if len(d) >= 12 and d[:4] == b"FORM" and d[8:12] in (b"AIFF", b"AIFC"): return "aiff"
     if len(d) >= 8 and d[4:8] == b"ftyp": return "m4a"
-    if d[:3] == b"ID3" or (len(d) > 2 and d[0] == 0xFF and (d[1] & 0xE0) == 0xE0): return "mp3"
-    if len(d) > 2 and d[0] == 0xFF and (d[1] & 0xF0) == 0xF0: return "aac"
-    max_scan = min(len(d) - 2, 2048)
-    for offset in range(1, max_scan):
-        if d[offset:offset+3] == b"ID3":
-            return "mp3"
-        if d[offset] == 0xFF and (d[offset+1] & 0xE0) == 0xE0:
+    if d[:3] == b"ID3" or _mpeg_sync(d, 0): return "mp3"
+    if len(d) > 2 and d[0] == 0xFF and (d[1] & 0xF6) == 0xF0: return "aac"           # ADTS, layer bits 00
+    for offset in range(1, min(len(d) - 3, 2048)):                                   # leading junk before the first frame
+        if d[offset:offset + 3] == b"ID3" or _mpeg_sync(d, offset):
             return "mp3"
     return None
 
@@ -112,12 +117,30 @@ def _via_ffmpeg(data: bytes, kind: str):
     return x, fs, f"{kind.upper()} decoded by FFmpeg -> float32"
 
 
+def _check_wav_truncation(data: bytes) -> None:
+    """Walk the RIFF chunks; reject if the 'data' chunk declares more bytes than the file contains.
+    (libsndfile silently shrinks a truncated file to what is present, so the decoder alone cannot tell.)"""
+    if data[:4] != b"RIFF":
+        return                                   # RF64 uses 64-bit sizes; not checked here
+    pos = 12
+    while pos + 8 <= len(data):
+        cid, size = data[pos:pos + 4], int.from_bytes(data[pos + 4:pos + 8], "little")
+        if cid == b"data":
+            avail = len(data) - (pos + 8)
+            if size not in (0, 0xFFFFFFFF) and size > avail:
+                raise AudioError(f"WAV is truncated: header declares {size} bytes of audio but only {avail} are present")
+            return
+        pos += 8 + size + (size & 1)
+
+
 def decode_audio(data: bytes) -> dict:
     if len(data) > settings.max_file_bytes:
         raise AudioError(f"file exceeds the {settings.max_file_bytes // 2**20} MB limit")
     kind = sniff_format(data[:4096]) if len(data) >= 4 else None
     if kind is None:
         raise AudioError("unrecognised audio content (not WAV, FLAC, OGG, AIFF, MP3, AAC or M4A); the file extension is ignored")
+    if kind == "wav":
+        _check_wav_truncation(data)
     warnings, x, fs, desc = [], None, None, None
     try:
         if sf is not None:

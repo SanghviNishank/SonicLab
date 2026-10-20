@@ -106,3 +106,25 @@ def test_mp3_with_id3_metadata_decodes_cleanly():
     assert res["samples"].shape[0] == 1
     assert abs(res["samples"].shape[1] - FS) <= FS * 0.15
 
+
+
+def test_truncated_wav_data_chunk_is_rejected_even_when_header_is_valid():
+    b, _ = encode_wav(tone(500, FS, 1.0), FS)
+    with pytest.raises(AudioError) as e: decode_audio(b[:100])          # header intact, audio cut off
+    assert "truncated" in str(e.value)
+    with pytest.raises(AudioError): decode_audio(b[:len(b) // 2])
+
+def test_wav_with_trailing_chunk_is_not_flagged_as_truncated():
+    b, _ = encode_wav(tone(500, FS, 0.5), FS)
+    extra = b"LIST" + (4).to_bytes(4, "little") + b"INFO"
+    assert decode_audio(b + extra)["samples"].shape[1] == FS // 2
+
+def test_random_bytes_with_sync_like_pattern_are_not_treated_as_mp3():
+    junk = b"\x00" * 50 + b"\xff\xe0\x00" + b"\x11" * 100          # 11 sync bits but invalid header fields
+    assert sniff_format(junk) is None
+    with pytest.raises(AudioError): decode_audio(junk + b"\x00" * 200)
+
+def test_real_mp3_file_with_id3_and_cover_like_tag_decodes_in_full():
+    data = make(["-c:a", "libmp3lame", "-metadata", "title=T", "-metadata", "comment=" + "X" * 4000], ".mp3")
+    d = decode_audio(data)
+    assert d["source_format"] == "mp3" and abs(d["samples"].shape[1] - FS) <= FS * 0.15

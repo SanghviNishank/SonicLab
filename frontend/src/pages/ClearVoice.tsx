@@ -14,7 +14,8 @@ export default function ClearVoice() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [presets, setPresets] = useState<Record<string, string>>({});
-  const [preset, setPreset] = useState("speech_clarity");
+  const [preset, setPreset] = useState("lecture_speech");
+  const [adv, setAdv] = useState({ on: false, method: "wiener", strength: 0.7, reduction: 18, gate: true, hp: 80 });
   const [f, setF] = useState({ filter_type: "lowpass", order: 4, lo: 1000, hi: 3000, method: "zero_phase" });
   useEffect(() => { call("/api/v1/clearvoice/presets").then((r) => setPresets(r.presets)).catch(() => {}); }, []);
   const id = up?.metadata.audio_id;
@@ -25,7 +26,15 @@ export default function ClearVoice() {
   const filter = () => run(async () => setRes(await postJson(`/api/v1/clearvoice/${id}/filter`,
     { filter_type: f.filter_type, order: Number(f.order), cutoff_hz: two ? [Number(f.lo), Number(f.hi)] : [Number(f.lo)], method: f.method })));
 
-  const voice = () => run(async () => setRes(await postJson(`/api/v1/clearvoice/${id}/voice`, { preset })));
+  const voice = () => run(async () => {
+    const overrides = adv.on ? {
+      rumble: { enabled: true, cutoff_hz: Number(adv.hp), order: 4 }, dc_removal: { enabled: true },
+      noise_reduction: { enabled: true, method: adv.method, strength: Number(adv.strength), max_reduction_db: Number(adv.reduction) },
+      speech_gate: { enabled: adv.gate, attenuation_db: 10 } } : {};
+    setRes(null);                                   // never show the previous result while a new one is computed
+    setRes(await postJson(`/api/v1/clearvoice/${id}/voice`, { preset, overrides }));
+  });
+  const reset = () => { setRes(null); setAn(null); setErr(""); setAdv({ on: false, method: "wiener", strength: 0.7, reduction: 18, gate: true, hp: 80 }); setPreset("lecture_speech"); };
 
   return (
     <div className="stack">
@@ -50,7 +59,17 @@ export default function ClearVoice() {
           <div className="form"><label>Preset<select value={preset} onChange={(e) => setPreset(e.target.value)}>
             {Object.keys(presets).map((k) => <option key={k} value={k}>{k.replace(/_/g, " ")}</option>)}</select></label></div>
           <p className="muted">{presets[preset] ?? "Loading presets…"}</p>
-          <button className="btn" disabled={busy} onClick={voice}>{busy ? "Processing…" : "Run voice pipeline"}</button>
+          <label className="inline"><input type="checkbox" checked={adv.on} onChange={(e) => setAdv({ ...adv, on: e.target.checked })} /> Advanced: override preset with these settings</label>
+          {adv.on && <div className="form">
+            <label>Noise-reduction method<select value={adv.method} onChange={(e) => setAdv({ ...adv, method: e.target.value })}>
+              <option value="wiener">Adaptive Wiener (no noise-only section needed)</option><option value="gate">Spectral gate (uses quietest 10% of frames)</option></select></label>
+            <label>Strength (0–1)<input type="number" step={0.1} min={0} max={1} value={adv.strength} onChange={(e) => setAdv({ ...adv, strength: +e.target.value })} /></label>
+            <label>Max reduction (dB)<input type="number" min={1} max={40} value={adv.reduction} onChange={(e) => setAdv({ ...adv, reduction: +e.target.value })} /></label>
+            <label>Rumble high-pass (Hz)<input type="number" min={20} max={400} value={adv.hp} onChange={(e) => setAdv({ ...adv, hp: +e.target.value })} /></label>
+            <label className="inline"><input type="checkbox" checked={adv.gate} onChange={(e) => setAdv({ ...adv, gate: e.target.checked })} /> Attenuate non-speech intervals by 10 dB</label></div>}
+          <p className="actions"><button className="btn" disabled={busy} onClick={voice}>{busy ? "Processing…" : "Run voice pipeline"}</button>
+            <button className="btn ghost" disabled={busy} onClick={reset}>Reset</button></p>
+          <p className="muted">These stages reduce steady or slowly varying noise. They cannot remove music or other talkers, and cannot identify one speaker.</p>
           <p className="muted">A filter is not a denoiser. Presets are fixed parameter sets, not guarantees; subjective speech quality is not verified.</p></section>
         <section className="card"><h3>4b · Digital filter</h3>
           <div className="form">
@@ -82,7 +101,8 @@ export default function ClearVoice() {
             <div className="table-wrap"><table><thead><tr><th>Ch</th><th>RMS before</th><th>RMS after</th><th>MSE</th></tr></thead><tbody>
               {res.metrics.per_channel.map((m: any, i: number) => <tr key={i}><td>{i}</td><td>{m.rms_before.toFixed(5)}</td><td>{m.rms_after.toFixed(5)}</td><td>{m.mse.toExponential(3)}</td></tr>)}</tbody></table></div>
             <p className="muted">{res.metrics.note}</p>
-            <audio controls src={url(`/api/v1/clearvoice/${res.job_id}/download`)} style={{ width: "100%" }} aria-label="Filtered audio" />
+            <audio key={res.job_id} controls src={url(`/api/v1/clearvoice/${res.job_id}/download`)} style={{ width: "100%" }} aria-label="Processed audio" />
+            {res.processing_s != null && <p className="muted">Processed in {res.processing_s.toFixed(1)} s · job {res.job_id.slice(0, 8)}</p>}
             <p className="actions">
               <a className="btn" href={url(`/api/v1/clearvoice/${res.job_id}/download`)}>Filtered WAV</a>
               <a className="btn ghost" href={url(`/api/v1/clearvoice/${res.job_id}/export?kind=metadata`)}>Settings JSON</a>

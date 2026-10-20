@@ -135,6 +135,7 @@ class FilterReq(BaseModel):
 def filter_audio(audio_id: str, req: FilterReq):
     a = _audio(audio_id)
     x, fs = a["x"], a["fs"]
+    t_start = time.perf_counter()
     try:
         r = flt.run_filter(x, fs, req.filter_type, req.order, req.cutoff_hz, req.method)
         y = r["output"]
@@ -149,7 +150,7 @@ def filter_audio(audio_id: str, req: FilterReq):
                             "config": r["config"], "metrics": metrics, "warnings": r["warnings"],
                             "wav": audio_io.encode_wav(y, fs, "float32")[0], "x": x,
                             "wav_pcm16": audio_io.encode_wav(y, fs, "pcm16"), "before": before["spectrum"], "after": after["spectrum"]})
-    return {"job_id": job, "config": r["config"], "warnings": r["warnings"], "metrics": metrics,
+    return {"job_id": job, "processing_s": time.perf_counter() - t_start, "config": r["config"], "warnings": r["warnings"], "metrics": metrics,
             "response": {"freqs_hz": resp["freqs_hz"][sub].tolist(), "magnitude_db": resp["magnitude_db"][sub].tolist(),
                          "effective": resp["effective"]},
             "waveform_original": _wave_payload(x, fs), "waveform_filtered": _wave_payload(y, fs),
@@ -174,6 +175,7 @@ def presets():
 def voice(audio_id: str, req: VoiceReq):
     a = _audio(audio_id)
     x, fs = a["x"], a["fs"]
+    t_start = time.perf_counter()
     try:
         r = vc.run_voice_pipeline(x, fs, req.preset, req.overrides)
         y = r["output"]
@@ -186,7 +188,7 @@ def voice(audio_id: str, req: VoiceReq):
                             "history": r["history"], "quality": r["quality"],
                             "wav": audio_io.encode_wav(y, fs, "float32")[0], "wav_pcm16": audio_io.encode_wav(y, fs, "pcm16"),
                             "before": before["spectrum"], "after": after["spectrum"]})
-    return {"job_id": job, "config": cfg, "history": r["history"], "quality": r["quality"], "warnings": r["warnings"],
+    return {"job_id": job, "processing_s": time.perf_counter() - t_start, "config": cfg, "history": r["history"], "quality": r["quality"], "warnings": r["warnings"],
             "metrics": metrics, "bypass_note": "Compare against the original with the A/B players; the original is never modified.",
             "waveform_original": _wave_payload(x, fs), "waveform_filtered": _wave_payload(y, fs),
             "spectrum_original": before["spectrum"], "spectrum_filtered": after["spectrum"],

@@ -14,6 +14,7 @@ from copy import deepcopy
 import numpy as np
 from scipy import signal
 from . import filters as flt
+from . import enhance as enh, vad as vadmod
 
 MAX_FRAME = 8192
 
@@ -93,9 +94,11 @@ DEFAULT_CONFIG = {
     "dc_removal": {"enabled": False},
     "rumble": {"enabled": False, "cutoff_hz": 80.0, "order": 4},
     "band_limit": {"enabled": False, "highpass_hz": None, "lowpass_hz": None, "order": 4},
-    "noise_reduction": {"enabled": False, "strength": 0.6, "max_reduction_db": 18.0, "frame_length": 2048,
+    "noise_reduction": {"enabled": False, "method": "gate", "strength": 0.6, "max_reduction_db": 18.0, "frame_length": 2048,
                         "noise_segment_s": None},
+    "speech_gate": {"enabled": False, "attenuation_db": 12.0},
     "loudness": {"enabled": False, "target_peak_dbfs": -1.0},
+    "peak_guard": {"enabled": True, "ceiling_dbfs": -0.5},
     "method": "zero_phase",
 }
 
@@ -117,6 +120,12 @@ PRESETS = {
     "telephone_band": {"description": "300-3400 Hz band-limit. Removes consonant detail above 3.4 kHz: sounds 'phone-like'.",
                        "config": {"dc_removal": {"enabled": True},
                                   "band_limit": {"enabled": True, "highpass_hz": 300.0, "lowpass_hz": 3400.0, "order": 4}}},
+    "lecture_speech": {"description": "For a talker recorded with steady/slowly varying background noise: DC removal, 80 Hz high-pass, adaptive Wiener noise "
+                                      "tracking (needs no noise-only section), gentle (-10 dB) attenuation of non-speech intervals. "
+                                      "Does NOT remove music or other talkers.",
+                       "config": {"dc_removal": {"enabled": True}, "rumble": {"enabled": True, "cutoff_hz": 80.0, "order": 4},
+                                  "noise_reduction": {"enabled": True, "method": "wiener", "strength": 0.7, "max_reduction_db": 18.0},
+                                  "speech_gate": {"enabled": True, "attenuation_db": 10.0}}},
     "manual": {"description": "Everything off; enable stages yourself.", "config": {}},
 }
 
@@ -198,16 +207,33 @@ def run_voice_pipeline(x: np.ndarray, fs: float, preset: str | None = None, over
 
     c = cfg["noise_reduction"]
     if c["enabled"]:
+        if c.get("method", "gate") not in ("gate", "wiener"):
+            raise ValueError("noise_reduction.method must be 'gate' or 'wiener'")
         outs = []
         for ch in y:
-            seg = tuple(c["noise_segment_s"]) if c.get("noise_segment_s") else None
-            outs.append(spectral_gate(ch, fs, float(c["strength"]), float(c["max_reduction_db"]), int(c["frame_length"]), seg))
+            if c.get("method", "gate") == "wiener":
+                outs.append(enh.spectral_wiener(ch, fs, float(c["strength"]), float(c["max_reduction_db"]), int(c["frame_length"])))
+                outs[-1]["noise_source"] = "adaptive minimum-statistics tracking"
+            else:
+                seg = tuple(c["noise_segment_s"]) if c.get("noise_segment_s") else None
+                outs.append(spectral_gate(ch, fs, float(c["strength"]), float(c["max_reduction_db"]), int(c["frame_length"]), seg))
         y = np.vstack([o["y"] for o in outs])
         for o in outs: warnings += o["warnings"]
-        log("noise_reduction", {"method": "spectral subtraction with gain floor (Hann STFT, 75% overlap)",
-                                "strength": c["strength"], "max_reduction_db": c["max_reduction_db"],
+        log("noise_reduction", {"method": c.get("method", "gate"), "strength": c["strength"], "max_reduction_db": c["max_reduction_db"],
                                 "noise_estimate": outs[0]["noise_source"], "mean_gain_db": [o["mean_gain_db"] for o in outs],
                                 "frame_length": int(c["frame_length"])})
+
+    c = cfg["speech_gate"]
+    if c["enabled"]:
+        v = vadmod.detect_speech(y.mean(axis=0), fs)
+        if v["speech_fraction"] == 0:
+            warnings.append("Speech gate skipped: no speech-like frames were detected, so nothing would be preserved.")
+            history.append({"stage": "speech_gate_skipped", "params": {"reason": "no speech-like frames"}, **_stats(y)})
+        else:
+            r = enh.vad_attenuate(y, fs, v, float(c["attenuation_db"]))
+            y = r["y"]
+            log("speech_gate", {"attenuation_db": c["attenuation_db"], "speech_fraction": v["speech_fraction"], "segments": len(v["segments"]),
+                                "vad": v["params"], "note": v["note"]})
 
     c = cfg["loudness"]
     if c["enabled"]:
@@ -217,6 +243,13 @@ def run_voice_pipeline(x: np.ndarray, fs: float, preset: str | None = None, over
             y = y * g
             log("loudness_peak_gain", {"target_peak_dbfs": c["target_peak_dbfs"], "applied_gain_db": float(20 * np.log10(g)),
                                        "note": "single static gain; explicit and reported; not perceptual loudness (LUFS)"})
+    c = cfg["peak_guard"]
+    if c["enabled"]:
+        y2, gdb = enh.peak_guard(y, float(c["ceiling_dbfs"]))
+        if gdb != 0.0:
+            y = y2
+            log("peak_guard", {"ceiling_dbfs": c["ceiling_dbfs"], "applied_gain_db": gdb,
+                               "note": "static gain reduction because the peak exceeded the ceiling (filter overshoot or boost); reported, not hidden"})
     q = quality_checks(x, y, fs)
     if not q["ok"]:
         warnings.append("QUALITY CHECK FAILED: " + "; ".join(q["issues"]) + " - do not treat this as a successful enhancement.")

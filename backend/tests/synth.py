@@ -38,3 +38,11 @@ def speech_like(fs=16000, dur=3.0, seed=0):
     env = 0.55 + 0.45 * np.sin(2 * np.pi * 4 * t) ** 2
     y *= env
     return 0.5 * y / np.max(np.abs(y))
+
+
+def speech_like_realistic(fs=16000, dur=3.0, seed=0):
+    """speech_like() with content below 70 Hz removed. The raw generator's spectral-tilt filter amplifies the impulse
+    train's DC component ~33x, so its 'clean' reference holds a large sub-70 Hz component that real speech does not have;
+    a rumble high-pass would then be (wrongly) scored as removing wanted signal."""
+    from scipy.signal import butter, sosfiltfilt
+    return sosfiltfilt(butter(4, 70 / (fs / 2), "highpass", output="sos"), speech_like(fs, dur, seed))
