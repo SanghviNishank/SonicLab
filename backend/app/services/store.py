@@ -27,3 +27,22 @@ def _purge():
     now = time.time()
     for k in [k for k, v in _items.items() if now - v["t"] > settings.ttl_seconds]:
         del _items[k]
+
+
+def delete(item_id: str) -> None:
+    with _lock:
+        _items.pop(item_id, None)
+
+def list_summaries() -> list[dict]:
+    """Metadata only (never audio arrays)."""
+    with _lock:
+        _purge()
+        out = []
+        for k, v in sorted(_items.items(), key=lambda kv: kv[1]["t"], reverse=True):
+            if v["kind"] != "job": continue
+            d = v["data"]
+            out.append({"job_id": k, "created_epoch": v["t"], "input_label": d.get("name"),
+                        "type": "roadsonic" if "events" in d else "clearvoice",
+                        "config": d.get("config"), "warnings": d.get("warnings", []),
+                        "events": len(d["events"]) if "events" in d else None})
+        return out

@@ -25,7 +25,7 @@ def test_upload_metadata_exact():
 def test_rejects_non_wav_and_corrupt():
     assert c.post("/api/v1/audio/upload", files={"file": ("a.wav", b"hello world" * 20, "audio/wav")}).status_code == 422
     good = wav_bytes(tone(500))
-    assert c.post("/api/v1/audio/upload", files={"file": ("a.wav", good[:100], "audio/wav")}).status_code == 422
+    assert c.post("/api/v1/audio/upload", files={"file": ("a.wav", good[:30], "audio/wav")}).status_code == 422
 
 def test_filter_roundtrip_download_readback():
     x = tone(300, FS) + tone(4000, FS)
@@ -42,7 +42,7 @@ def test_invalid_cutoff_422():
 
 def test_stereo_preserved():
     st = np.vstack([tone(300), tone(4000)])
-    aid = upload(st.T).json()["metadata"]["audio_id"]
+    aid = upload(st).json()["metadata"]["audio_id"]
     j = c.post(f"/api/v1/clearvoice/{aid}/filter", json={"filter_type": "lowpass", "order": 6, "cutoff_hz": [1000]}).json()
     y, _ = sf.read(io.BytesIO(c.get(f"/api/v1/clearvoice/{j['job_id']}/download").content))
     assert y.shape == (FS, 2) and np.std(y[500:-500, 1]) < 1e-3

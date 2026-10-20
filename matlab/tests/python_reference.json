@@ -1,0 +1,13 @@
+{
+  "generator": "backend Python (NumPy/SciPy) - reference values for MATLAB comparison",
+  "signal": "0.3*sin(2*pi*500*t)+0.6*sin(2*pi*2500*t), fs=16000, 1 s, t=(0:fs-1)/fs",
+  "fs": 16000,
+  "hann_peak_hz": 2500.0,
+  "hann_peak_amp": 0.6000000000019502,
+  "n_bins": 8001,
+  "rms": 0.47434164902525566,
+  "variance_population": 0.2249999999999988,
+  "peak_abs": 0.8999999999999999,
+  "mse_vs_half_gain": 0.0562499999999997,
+  "tolerance": 1e-09
+}

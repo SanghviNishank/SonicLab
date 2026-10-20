@@ -90,6 +90,8 @@ export default function ClearVoice() {
               <a className="btn ghost" href={url(`/api/v1/clearvoice/${res.job_id}/export?kind=history`)}>History JSON</a>
               <a className="btn ghost" href={url(`/api/v1/clearvoice/${res.job_id}/export?kind=spectrogram_filtered`)}>Spectrogram CSV</a>
               <a className="btn ghost" href={url(`/api/v1/clearvoice/${res.job_id}/export?kind=metrics`)}>Metrics CSV</a>
+              <a className="btn ghost" href={url(`/api/v1/clearvoice/${res.job_id}/report?format=html`)}>HTML report</a>
+              <a className="btn ghost" href={url(`/api/v1/clearvoice/${res.job_id}/report?format=pdf`)}>PDF report</a>
               <a className="btn ghost" href={url(`/api/v1/clearvoice/${res.job_id}/export?kind=spectrum_filtered`)}>Spectrum CSV</a></p>
             <p className="muted">{res.wav_format}</p></section></>}
       </>}

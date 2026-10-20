@@ -1,5 +1,5 @@
 from __future__ import annotations
-import csv, io, json
+import csv, io, json, time
 import numpy as np
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import Response
@@ -10,7 +10,8 @@ from app.processing import audio_io, statistics as st, fft_analysis as fa, spect
 from app.processing import filters as flt, comparison as cmp, voice as vc
 from app.processing.siren_features import extract_features
 from app.processing.siren_detector import DetectorConfig, detect_candidate_sirens
-from app.services import store
+from app.matlab import engine_adapter
+from app.services import store, reports, report_builders as rb
 
 router = APIRouter(prefix="/api/v1")
 _MIME = {"wav": "audio/wav", "flac": "audio/flac", "ogg": "audio/ogg", "mp3": "audio/mpeg", "m4a": "audio/mp4", "aiff": "audio/aiff"}
@@ -44,7 +45,7 @@ def _downsample_spec(freqs, amp, max_points=6000):
 
 @router.get("/health")
 def health():
-    return {"status": "ok", "audio_io": audio_io.capabilities(), "engine": "python-scipy", "matlab_engine": "not used (see docs/matlab_setup.md)",
+    return {"status": "ok", "audio_io": audio_io.capabilities(), "engine": "python-scipy", "matlab": engine_adapter.status(),
             "limits": {"max_file_mb": settings.max_file_bytes // 2**20, "max_duration_s": settings.max_duration_s}}
 
 
@@ -56,10 +57,12 @@ async def upload(file: UploadFile = File(...)):
     except audio_io.AudioError as e:
         raise HTTPException(422, str(e))
     x, fs = dec["samples"], dec["sample_rate"]
-    audio_id = store.put("audio", {"x": x, "fs": fs, "wav": data, "subtype": dec["subtype"], "source_format": dec["source_format"]})
+    audio_id = store.put("audio", {"x": x, "fs": fs, "wav": data, "subtype": dec["subtype"], "source_format": dec["source_format"],
+                                "name": (file.filename or "unnamed")[:120]})
     meta = {"audio_id": audio_id, "sample_rate_hz": fs, "channels": x.shape[0], "samples_per_channel": x.shape[1],
             "duration_s": x.shape[1] / fs, "sample_format": dec["subtype"], "decoded_dtype": "float64",
             "source_format": dec["source_format"], "decoder_warnings": dec["warnings"]}
+    a = store.get(audio_id, "audio"); a["meta"] = meta
     return {"metadata": meta, "statistics": st.audio_statistics(x, fs), "waveform": _wave_payload(x, fs)}
 
 
@@ -82,9 +85,9 @@ def _analysis(x2, fs, req: AnalyzeReq) -> dict:
     if req.channel >= x2.shape[0]:
         raise HTTPException(422, "channel index out of range")
     ch = x2[req.channel]
-    sp = fa.single_sided_spectrum(ch, fs, req.window, req.n_fft)
+    sp, spec_engine = engine_adapter.single_sided_spectrum(ch, fs, req.window, req.n_fft)
     f, a = _downsample_spec(sp["freqs_hz"], sp["amplitude"])
-    out = {"channel": req.channel, "engine": "python-numpy-fft",
+    out = {"channel": req.channel, "engine": spec_engine,
            "spectrum": {"freqs_hz": f.tolist(), "amplitude": a.tolist(), "window": sp["window"], "n_fft": sp["n_fft"],
                         "bin_spacing_hz": sp["bin_spacing_hz"], "nominal_resolution_hz": sp["nominal_resolution_hz"],
                         "amplitude_unit": sp["amplitude_unit"],
@@ -108,6 +111,8 @@ def analyze(audio_id: str, req: AnalyzeReq):
     a = _audio(audio_id)
     try:
         return _analysis(a["x"], a["fs"], req)
+    except engine_adapter.EngineError as e:
+        raise HTTPException(503, str(e))
     except ValueError as e:
         raise HTTPException(422, str(e))
 
@@ -134,7 +139,8 @@ def filter_audio(audio_id: str, req: FilterReq):
         raise HTTPException(422, str(e))
     resp = r["response"]
     sub = np.unique(np.linspace(0, resp["freqs_hz"].size - 1, 600).astype(int))
-    job = store.put("job", {"y": y, "fs": fs, "config": r["config"], "metrics": metrics, "warnings": r["warnings"],
+    job = store.put("job", {"y": y, "fs": fs, "meta": a["meta"], "name": a["name"], "created": time.time(), "audio_id": audio_id,
+                            "config": r["config"], "metrics": metrics, "warnings": r["warnings"],
                             "wav": audio_io.encode_wav(y, fs, "float32")[0], "x": x,
                             "wav_pcm16": audio_io.encode_wav(y, fs, "pcm16"), "before": before["spectrum"], "after": after["spectrum"]})
     return {"job_id": job, "config": r["config"], "warnings": r["warnings"], "metrics": metrics,
@@ -170,7 +176,7 @@ def voice(audio_id: str, req: VoiceReq):
     except ValueError as e:                                   # includes FilterError
         raise HTTPException(422, str(e))
     cfg = {"pipeline": "voice", "preset": r["preset"], "stages": r["config"], "sample_rate": float(fs), "engine": r["engine"]}
-    job = store.put("job", {"y": y, "x": x, "fs": fs, "config": cfg, "metrics": metrics, "warnings": r["warnings"],
+    job = store.put("job", {"y": y, "x": x, "fs": fs, "meta": a["meta"], "name": a["name"], "created": time.time(), "audio_id": audio_id, "config": cfg, "metrics": metrics, "warnings": r["warnings"],
                             "history": r["history"], "quality": r["quality"],
                             "wav": audio_io.encode_wav(y, fs, "float32")[0], "wav_pcm16": audio_io.encode_wav(y, fs, "pcm16"),
                             "before": before["spectrum"], "after": after["spectrum"]})
@@ -273,11 +279,17 @@ def detect(audio_id: str, req: DetectReq):
             for i in range(feat["time_s"].size)]
     ev_rows = [{"start_s": e["start_s"], "end_s": e["end_s"], "duration_s": e["duration_s"],
                 "heuristic_score": e["heuristic_score"], **e["features"]} for e in res["events"]]
-    job = store.put("job", {"events": res["events"], "ev_csv": _csv(ev_rows), "feat_csv": _csv(rows),
+    S = sg.stft_db(mono, fs, 1024, 256)
+    db = S["magnitude_db"]; st_t = max(1, db.shape[1] // 500); st_f = max(1, db.shape[0] // 200)
+    spec = {"times_s": S["times_s"][::st_t].tolist(), "freqs_hz": S["freqs_hz"][::st_f].tolist(),
+            "magnitude_db": np.round(db[::st_f, ::st_t], 1).tolist(), "reference": S["reference"],
+            "note": "event times use the same seconds axis as the audio; frame centre = (m*hop + frame/2)/fs"}
+    job = store.put("job", {"mono": mono, "fs": fs, "feat": feat, "meta": a["meta"], "name": a["name"], "created": time.time(),
+                            "audio_id": audio_id, "events": res["events"], "ev_csv": _csv(ev_rows), "feat_csv": _csv(rows),
                             "config": {"detector": res["config"], "features": feat["meta"], "preprocessing": steps}})
     step = max(1, len(rows) // 1500)
     return {"job_id": job, "engine": "python-numpy/scipy", "preprocessing": steps, "events": res["events"],
-            "config": {"detector": res["config"], "features": feat["meta"]},
+            "config": {"detector": res["config"], "features": feat["meta"]}, "spectrogram": spec,
             "features": {k: [r[k] for r in rows[::step]] for k in rows[0]} if rows else {},
             "waveform": _wave_payload(x, fs),
             "disclaimer": "Academic prototype: candidate events are heuristic and NOT a safety-critical warning."}
@@ -293,3 +305,42 @@ def rs_export(job_id: str, kind: str = "events_csv"):
         raise HTTPException(422, f"kind must be one of {list(m)}")
     body, mt, fn = m[kind]
     return Response(body, media_type=mt, headers={"Content-Disposition": f'attachment; filename="{fn}"'})
+
+
+def _report_response(model_fn, job, fmt: str, base: str):
+    try:
+        model = model_fn(job)
+        if fmt == "html":
+            return Response(reports.to_html(model), media_type="text/html", headers={"Content-Disposition": f'attachment; filename="{base}.html"'})
+        if fmt == "pdf":
+            return Response(reports.to_pdf(model), media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{base}.pdf"'})
+    except RuntimeError as e:
+        raise HTTPException(501, str(e))
+    raise HTTPException(422, "format must be html or pdf")
+
+
+@router.get("/clearvoice/{job_id}/report")
+def clearvoice_report(job_id: str, format: str = "html"):
+    return _report_response(rb.clearvoice_report, _job(job_id), format, "clearvoice_report")
+
+
+@router.get("/roadsonic/{job_id}/report")
+def roadsonic_report(job_id: str, format: str = "html"):
+    j = _job(job_id)
+    if "events" not in j:
+        raise HTTPException(404, "not a RoadSonic job")
+    return _report_response(rb.roadsonic_report, j, format, "roadsonic_report")
+
+
+@router.get("/history")
+def history():
+    """Session-scoped list of processing results still held in memory (no raw samples)."""
+    return {"items": store.list_summaries(), "note": "In-memory, cleared on restart or after the TTL; no database."}
+
+
+@router.delete("/audio/{audio_id}")
+def delete_audio(audio_id: str):
+    if store.get(audio_id, "audio") is None:
+        raise HTTPException(404, "audio not found or expired")
+    store.delete(audio_id)
+    return {"deleted": True}

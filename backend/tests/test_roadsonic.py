@@ -57,3 +57,30 @@ def test_reproducible_and_config_recorded():
 
 def test_short_clip_no_crash():
     assert detect(noise(100, 1)) == []
+
+
+def test_event_times_align_with_spectrogram_axis():
+    """Overlay contract: the event interval and the spectrogram time axis share one seconds reference."""
+    from app.processing.spectrogram import stft_db
+    x = np.concatenate([np.zeros(FS * 2), siren(FS, 4.0), np.zeros(FS * 2)])
+    ev = detect(x)[0]
+    S = stft_db(x, FS, 1024, 256)
+    band = (S["freqs_hz"] >= 600) & (S["freqs_hz"] <= 1400)
+    lvl = S["magnitude_db"][band].max(axis=0)
+    active = S["times_s"][lvl > -40]
+    assert abs(active.min() - 2.0) < 0.15 and abs(active.max() - 6.0) < 0.15       # ground truth 2.0-6.0 s
+    assert abs(ev["start_s"] - active.min()) < 0.5 and abs(ev["end_s"] - active.max()) < 0.5
+
+def test_detection_across_sample_rates():
+    from app.processing.siren_features import extract_features as ef
+    for fs in (8000, 22050, 44100, 48000):
+        x = np.concatenate([np.zeros(fs * 2), siren(fs, 4.0), np.zeros(fs * 2)])
+        ev = detect_candidate_sirens(ef(x, fs))["events"]
+        assert len(ev) == 1, fs
+        assert abs(ev[0]["start_s"] - 2.0) < 0.6 and abs(ev[0]["end_s"] - 6.0) < 0.6, fs
+
+def test_stereo_mix_and_antiphase_cancellation_is_documented_limitation():
+    s = siren(FS, 4.0); x = np.concatenate([np.zeros(FS), s, np.zeros(FS)])
+    mix_same = (x + x) / 2
+    assert len(detect(mix_same)) == 1
+    assert detect((x + (-x)) / 2) == []          # out-of-phase channels cancel in a mono mix (documented in the UI/API)
