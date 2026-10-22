@@ -67,24 +67,25 @@ def clearvoice_model(*, source_name: str, meta: dict, stats_before: dict, stats_
 
 
 def roadsonic_model(*, source_name: str, meta: dict, config: dict, preprocessing: list, events: list, feat_summary: dict,
-                    engine: str, images: list) -> dict:
+                    engine: str, images: list, detect_on: str = "original") -> dict:
     s = [{"heading": "Disclaimer", "paragraphs": ["Academic prototype. Events below are CANDIDATE siren events produced by interpretable heuristic rules. "
                                                    "They are not confirmed sirens, the score is not a probability, and this is not a safety-critical warning system. "
                                                    "The detector has not been evaluated on labelled real recordings."]},
          {"heading": "Audio", "paragraphs": [f"Source file label (not trusted): {source_name}"],
           "table": {"columns": ["Property", "Value"], "rows": [["Sample rate (Hz)", _fmt(meta["sample_rate_hz"])], ["Channels", str(meta["channels"])],
                     ["Duration (s)", _fmt(meta["duration_s"], 6)], ["Source format", _fmt(meta.get("source_format"))]]}},
-         {"heading": "Preprocessing", "paragraphs": ["Engine: " + engine] + [f"{p['step']}: {p['detail']}" for p in preprocessing]},
+         {"heading": "Preprocessing and audio version analysed", "paragraphs": ["Engine: " + engine, f"Detection results below were produced from the {detect_on} audio."] + [f"{p['step']}: {p['detail']}" for p in preprocessing]},
          {"heading": "Detector and feature configuration", "paragraphs": [],
           "table": {"columns": ["Key", "Value"], "rows": [[k, _fmt(v)] for k, v in {**config["detector"], **{"feature_" + k: v for k, v in config["features"].items()}}.items()]}},
          {"heading": f"Feature summary ({feat_summary['n_frames']} frames)", "paragraphs": [],
           "table": {"columns": ["Feature", "mean", "min", "max"], "rows": [[k, _fmt(v["mean"]), _fmt(v["min"]), _fmt(v["max"])] for k, v in feat_summary["features"].items()]}}]
     if events:
         s.append({"heading": f"Candidate siren events ({len(events)})", "paragraphs": ["Heuristic score = mean of three normalised evidence terms; it is not a calibrated probability."],
-                  "table": {"columns": ["#", "Start (s)", "End (s)", "Duration (s)", "Score*", "Tonal fraction", "f0 range (Hz)", "f0 std (Hz)", "Rules"],
-                            "rows": [[str(i + 1), _fmt(e["start_s"], 5), _fmt(e["end_s"], 5), _fmt(e["duration_s"], 4), _fmt(e["heuristic_score"], 3),
+                  "table": {"columns": ["#", "Start (s)", "End (s)", "Duration (s)", "Score*", "Pattern", "Tonal fraction", "f0 range (Hz)", "f0 std (Hz)", "Rules"],
+                            "rows": [[str(i + 1), _fmt(e["start_s"], 5), _fmt(e["end_s"], 5), _fmt(e["duration_s"], 4), _fmt(e["heuristic_score"], 3), e.get("trajectory", {}).get("pattern", "-"),
                                       _fmt(e["features"]["tonal_fraction"], 3), _fmt(e["features"]["f0_range_hz"], 4), _fmt(e["features"]["f0_std_hz"], 4),
                                       ", ".join(f"{k}={v}" for k, v in e["rules"].items())] for i, e in enumerate(events)]}})
+        s.append({"heading": "Why each interval was flagged", "paragraphs": [f"Event {i + 1}: {e.get('explanation', '')}" for i, e in enumerate(events)]})
     else:
         s.append({"heading": "Candidate siren events (0)", "paragraphs": ["No candidate events under these rules. This does not prove that no siren is present."]})
     if images: s.append({"heading": "Plots", "paragraphs": [], "images": images})

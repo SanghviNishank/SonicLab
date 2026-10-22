@@ -506,8 +506,6 @@ pytest tests/test_api.py
    * *Mean Squared Error (MSE)*: Measures total energy deviation between the processed and original signal: $\text{MSE} = \frac{1}{N} \sum_{n=0}^{N-1} (x[n] - y[n])^2$. A lower MSE does not imply higher audio quality—it simply measures signal difference.
    * *Signal-to-Noise Ratio (SNR)*: SNR improvements are reported only in synthetic test benchmarks with a known ground-truth clean signal. Computing SNR on real-world recordings without reference clean audio is mathematically ungrounded.
 
-<<<<<<< HEAD
-=======
 
 
 ## Voice enhancement presets and the command-line tool
@@ -520,4 +518,8 @@ python ..\scripts\analyze_and_process.py --input C:\path\recording.mp3 --preset 
 # optional: --compare old_output.wav   --reference professor_voice.wav
 ```
 It writes `analysis.json` + figures and re-opens the WAV to prove it contains the processed samples. See `docs/analysis/analysis_report.md` for the report on the uploaded recording.
->>>>>>> 588a8a1 (backend code updated)
+
+
+## RoadSonic (this iteration)
+Dashboard tabs: Overview (upload, metrics, timeline), Analysis (waveform, FFT, spectrogram, dominant-frequency track, feature tracks), Events (evidence, playback with context, clip download), Compare (original vs processed), Evaluation (your labels -> precision/recall/F1), Export (CSV/JSON/HTML/PDF). Settings (with help text, presets, reset, rerun) are served by `GET /api/v1/roadsonic/defaults`.
+Demo audio: `python scripts\make_demo_audio.py` (writes `demo_audio\*.wav`, already included). Benchmark: `python scripts\roadsonic_benchmark.py`. Docs: `docs/roadsonic.md`, `docs/roadsonic_audit.md`.

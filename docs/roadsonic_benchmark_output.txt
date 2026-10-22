@@ -1,0 +1,55 @@
+fixture                                                        sens   events  result
+clean siren 600-1400 Hz (truth 3-7 s)                          low      1     TP 1/1  FP 0  start err 0.04s end err 0.04s
+clean siren 600-1400 Hz (truth 3-7 s)                          medium   1     TP 1/1  FP 0  start err 0.04s end err 0.04s
+clean siren 600-1400 Hz (truth 3-7 s)                          high     1     TP 1/1  FP 0  start err 0.04s end err 0.04s
+siren + traffic-like noise (noise rms ~0.02, siren amp 0.5)    low      1     TP 1/1  FP 0  start err 0.04s end err 0.04s
+siren + traffic-like noise (noise rms ~0.02, siren amp 0.5)    medium   1     TP 1/1  FP 0  start err 0.04s end err 0.04s
+siren + traffic-like noise (noise rms ~0.02, siren amp 0.5)    high     1     TP 1/1  FP 0  start err 0.04s end err 0.04s
+siren + traffic-like noise (noise rms ~0.05, siren amp 0.5)    low      1     TP 1/1  FP 0  start err 0.04s end err 0.04s
+siren + traffic-like noise (noise rms ~0.05, siren amp 0.5)    medium   1     TP 1/1  FP 0  start err 0.04s end err 0.04s
+siren + traffic-like noise (noise rms ~0.05, siren amp 0.5)    high     1     TP 1/1  FP 0  start err 0.04s end err 0.04s
+siren + traffic-like noise (noise rms ~0.10, siren amp 0.5)    low      1     TP 1/1  FP 0  start err 0.04s end err 0.02s
+siren + traffic-like noise (noise rms ~0.10, siren amp 0.5)    medium   1     TP 1/1  FP 0  start err 0.04s end err 0.04s
+siren + traffic-like noise (noise rms ~0.10, siren amp 0.5)    high     1     TP 1/1  FP 0  start err 0.04s end err 0.04s
+siren + white noise amp 0.2                                    low      1     TP 1/1  FP 0  start err 0.02s end err 0.02s
+siren + white noise amp 0.2                                    medium   1     TP 1/1  FP 0  start err 0.04s end err 0.02s
+siren + white noise amp 0.2                                    high     1     TP 1/1  FP 0  start err 0.04s end err 0.04s
+siren + white noise amp 0.5                                    low      0     TP 0/1  FP 0
+siren + white noise amp 0.5                                    medium   1     TP 1/1  FP 0  start err 0.02s end err 0.01s
+siren + white noise amp 0.5                                    high     1     TP 1/1  FP 0  start err 0.02s end err 0.02s
+weak siren (amp 0.01) + noise 0.2                              low      0     TP 0/1  FP 0
+weak siren (amp 0.01) + noise 0.2                              medium   0     TP 0/1  FP 0
+weak siren (amp 0.01) + noise 0.2                              high     0     TP 0/1  FP 0
+narrow-sweep siren 700-1000 Hz                                 low      1     TP 1/1  FP 0  start err 0.17s end err 0.20s
+narrow-sweep siren 700-1000 Hz                                 medium   1     TP 1/1  FP 0  start err 0.07s end err 0.10s
+narrow-sweep siren 700-1000 Hz                                 high     1     TP 1/1  FP 0  start err 0.04s end err 0.04s
+fast 'yelp' siren 700-1500 Hz, 3 sweeps/s                      low      0     TP 0/1  FP 0
+fast 'yelp' siren 700-1500 Hz, 3 sweeps/s                      medium   1     TP 1/1  FP 0  start err 0.02s end err 0.04s
+fast 'yelp' siren 700-1500 Hz, 3 sweeps/s                      high     1     TP 1/1  FP 0  start err 0.04s end err 0.04s
+two sirens (1-3 s, 6-9 s)                                      low      2     TP 2/2  FP 0  start err 0.04s end err 0.04s
+two sirens (1-3 s, 6-9 s)                                      medium   2     TP 2/2  FP 0  start err 0.04s end err 0.04s
+two sirens (1-3 s, 6-9 s)                                      high     2     TP 2/2  FP 0  start err 0.04s end err 0.04s
+steady horn chord 440+550 Hz (no siren)                        low      0     no event (correct)
+steady horn chord 440+550 Hz (no siren)                        medium   0     no event (correct)
+steady horn chord 440+550 Hz (no siren)                        high     0     no event (correct)
+steady tone 900 Hz (no siren)                                  low      0     no event (correct)
+steady tone 900 Hz (no siren)                                  medium   0     no event (correct)
+steady tone 900 Hz (no siren)                                  high     0     no event (correct)
+vibrato horn 900 Hz +-30 Hz, 6 Hz (no siren)                   low      0     no event (correct)
+vibrato horn 900 Hz +-30 Hz, 6 Hz (no siren)                   medium   0     no event (correct)
+vibrato horn 900 Hz +-30 Hz, 6 Hz (no siren)                   high     0     no event (correct)
+slow glide 500->1500 Hz tone (not a siren)                     low      0     no event (correct)
+slow glide 500->1500 Hz tone (not a siren)                     medium   0     no event (correct)
+slow glide 500->1500 Hz tone (not a siren)                     high     1     FALSE ALARM x1
+speech-like (synthetic voiced) + noise (no siren)              low      0     no event (correct)
+speech-like (synthetic voiced) + noise (no siren)              medium   0     no event (correct)
+speech-like (synthetic voiced) + noise (no siren)              high     0     no event (correct)
+traffic-like noise only                                        low      0     no event (correct)
+traffic-like noise only                                        medium   0     no event (correct)
+traffic-like noise only                                        high     0     no event (correct)
+white noise only                                               low      0     no event (correct)
+white noise only                                               medium   0     no event (correct)
+white noise only                                               high     0     no event (correct)
+silence                                                        low      0     no event (correct)
+silence                                                        medium   0     no event (correct)
+silence                                                        high     0     no event (correct)

@@ -6,6 +6,8 @@ Per frame (all computed on the analysis band [band_lo, band_hi] where noted):
   centroid_hz   : sum(f P)/sum(P)   (band)
   bandwidth_hz  : sqrt(sum((f-centroid)^2 P)/sum(P))   (band)
   dom_freq_hz   : parabolic-interpolated spectral peak in band
+  flatness      : spectral flatness in band = geometric mean / arithmetic mean of power (1 = noise-like, ->0 = tonal)
+  peak_prominence_db : dominant-peak power over the median band power, in dB (how far the peak stands out)
   tonal_ratio   : energy in dominant peak +/- peak_halfwidth bins / energy in a wider context band
                   [100 Hz, min(1.5*band_hi, 0.45*fs)] (0..1). The wider denominator stops steep
                   low-frequency road-noise slopes leaking into the band from looking like a tone.
@@ -19,7 +21,7 @@ from __future__ import annotations
 import numpy as np
 from .fft_analysis import make_window
 
-FEATURE_NAMES = ["time_s", "rms_db", "centroid_hz", "bandwidth_hz", "dom_freq_hz", "tonal_ratio", "zcr"]
+FEATURE_NAMES = ["time_s", "rms_db", "centroid_hz", "bandwidth_hz", "flatness", "dom_freq_hz", "peak_prominence_db", "tonal_ratio", "zcr"]
 
 
 def extract_features(x: np.ndarray, fs: float, frame_ms: float = 64.0, hop_ms: float = 16.0,
@@ -27,6 +29,7 @@ def extract_features(x: np.ndarray, fs: float, frame_ms: float = 64.0, hop_ms: f
     x = np.asarray(x, dtype=np.float64)
     if x.ndim != 1:
         raise ValueError("expected a 1-D (mono) analysis signal")
+    n_samples = int(x.size)
     if not (0 < band_lo < band_hi < fs / 2):
         raise ValueError("band must satisfy 0 < band_lo < band_hi < Nyquist")
     L = int(round(frame_ms * fs / 1000.0))
@@ -74,6 +77,9 @@ def extract_features(x: np.ndarray, fs: float, frame_ms: float = 64.0, hop_ms: f
         pk = cs[r, hi] - cs[r, lo]
         ctx_tot = P[:, ctx].sum(axis=1)
         tonal = np.where(ctx_tot > 0, pk / np.where(ctx_tot > 0, ctx_tot, 1.0), 0.0)
+        eps = 1e-30
+        flat = np.exp(np.mean(np.log(Pb + eps), axis=1)) / (np.mean(Pb, axis=1) + eps)
+        prom = 10 * np.log10((Pb[r, kk] + eps) / (np.median(Pb, axis=1) + eps))
         tonal = np.where((k == 0) | (k == Pb.shape[1] - 1), 0.0, tonal)  # peak on band edge = spectral slope, not a tone
         rms = np.sqrt(np.mean(fr ** 2, axis=1))
         zc = np.mean(np.abs(np.diff(np.signbit(fr).astype(np.int8), axis=1)), axis=1)
@@ -83,9 +89,12 @@ def extract_features(x: np.ndarray, fs: float, frame_ms: float = 64.0, hop_ms: f
         out["centroid_hz"][sl] = np.where(tot > 0, cen, 0.0)
         out["bandwidth_hz"][sl] = bw
         out["dom_freq_hz"][sl] = np.where(tot > 0, dom, 0.0)
+        out["flatness"][sl] = np.where(tot > 0, flat, 1.0)
+        out["peak_prominence_db"][sl] = np.where(tot > 0, prom, 0.0)
         out["tonal_ratio"][sl] = tonal
         out["zcr"][sl] = zc
     out["meta"] = {"frame_length": L, "hop_length": H, "n_fft": n_fft, "window": "hann",
                    "band_hz": [band_lo, band_hi], "peak_halfwidth_bins": peak_halfwidth,
-                   "frame_ms": frame_ms, "hop_ms": hop_ms, "sample_rate": fs}
+                   "frame_ms": frame_ms, "hop_ms": hop_ms, "sample_rate": fs, "n_samples": n_samples,
+                   "duration_s": n_samples / fs}
     return out

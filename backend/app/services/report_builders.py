@@ -19,7 +19,7 @@ def clearvoice_report(job: dict, with_plots: bool = True) -> dict:
 
 
 def feature_summary(feat: dict) -> dict:
-    keys = ["rms_db", "centroid_hz", "bandwidth_hz", "dom_freq_hz", "tonal_ratio", "zcr"]
+    keys = ["rms_db", "centroid_hz", "bandwidth_hz", "flatness", "dom_freq_hz", "peak_prominence_db", "tonal_ratio", "zcr"]
     return {"n_frames": int(feat["time_s"].size),
             "features": {k: {"mean": float(np.mean(feat[k])), "min": float(np.min(feat[k])), "max": float(np.max(feat[k]))} for k in keys}}
 
@@ -30,4 +30,5 @@ def roadsonic_report(job: dict, with_plots: bool = True) -> dict:
         imgs = [("Waveform and dominant-frequency track with candidate events", report_plots.siren_overview(job["mono"], job["fs"], job["feat"], job["events"]))]
     return reports.roadsonic_model(
         source_name=job.get("name", "unknown"), meta=job["meta"], config=job["config"], preprocessing=job["config"]["preprocessing"],
-        events=job["events"], feat_summary=feature_summary(job["feat"]), engine="python-numpy/scipy", images=imgs)
+        events=job["events"], feat_summary=feature_summary(job["feat"]), engine="python-numpy/scipy", images=imgs,
+        detect_on=job.get("detect_on", "original"))

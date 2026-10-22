@@ -8,10 +8,11 @@ from pydantic import BaseModel, Field
 from app.core.config import settings
 from app.processing import audio_io, statistics as st, fft_analysis as fa, spectrogram as sg
 from app.processing import filters as flt, comparison as cmp, voice as vc
-from app.processing.siren_features import extract_features
-from app.processing.siren_detector import DetectorConfig, detect_candidate_sirens
 from app.matlab import engine_adapter
-from app.services import store, reports, report_builders as rb
+from app.services import store, reports, report_builders as rb, roadsonic as rsvc
+from app.schemas.roadsonic import DetectReq, EvaluateReq
+from app.processing import enhance as enh
+from app.processing.siren_detector import evaluate_events
 
 logger = logging.getLogger("signalsystem.api")
 
@@ -254,61 +255,132 @@ def export(job_id: str, kind: str = "metadata", channel: int = 0, frame_length: 
     raise HTTPException(422, "kind must be metadata, history, metrics, spectrum_original/filtered or spectrogram_original/filtered")
 
 
-class DetectReq(BaseModel):
-    channel_mode: str = Field("mix", pattern="^(mix|0|1)$")
-    remove_dc: bool = True
-    band_lo: float = 450.0
-    band_hi: float = 2000.0
-    config: dict = {}
+# ------------------------------------------------------------------ RoadSonic
+RS_FEATURE_COLS = ["time_s", "rms_db", "centroid_hz", "bandwidth_hz", "flatness", "dom_freq_hz", "peak_prominence_db", "tonal_ratio", "zcr"]
+
+
+def _rs_job(job_id: str) -> dict:
+    j = _job(job_id)
+    if "events" not in j:
+        raise HTTPException(404, "not a RoadSonic job")
+    return j
+
+
+@router.get("/roadsonic/defaults")
+def rs_defaults():
+    """Defaults, bounds, units and help text for every RoadSonic setting (single source of truth for the UI)."""
+    return rsvc.defaults_payload()
+
+
+def _version_payload(mono, fs, feat, events):
+    return {"events": events, "tracks": rsvc.tracks_payload(feat), "n_events": len(events),
+            "total_event_s": float(sum(e["duration_s"] for e in events))}
 
 
 @router.post("/roadsonic/{audio_id}/detect")
-def detect(audio_id: str, req: DetectReq):
+def rs_detect(audio_id: str, req: DetectReq):
     a = _audio(audio_id)
     x, fs = a["x"], a["fs"]
-    steps = []
-    if req.channel_mode == "mix":
-        mono = x.mean(axis=0)
-        steps.append({"step": "mono_mix", "detail": "channel average (may cancel out-of-phase content)" if x.shape[0] > 1 else "single channel"})
-    else:
-        if int(req.channel_mode) >= x.shape[0]:
-            raise HTTPException(422, "channel out of range")
-        mono = x[int(req.channel_mode)]
-        steps.append({"step": "channel_select", "detail": req.channel_mode})
-    if req.remove_dc:
-        mono = mono - mono.mean(); steps.append({"step": "dc_removal", "detail": "subtract mean"})
+    t_start = time.perf_counter()
     try:
-        cfg = DetectorConfig(**req.config)
-        feat = extract_features(mono, fs, band_lo=req.band_lo, band_hi=req.band_hi)
-        res = detect_candidate_sirens(feat, cfg)
-    except (TypeError, ValueError) as e:
+        R = rsvc.run(x, fs, req)
+        pre, active, use, chosen, main, other = R["pre"], R["active"], R["use"], R["chosen"], R["main"], R["other"]
+        spec, sgram, sgram_orig = R["spectrum"], R["spectrogram"], R["spectrogram_original"]
+    except (flt.FilterError, ValueError) as e:
         raise HTTPException(422, str(e))
-    rows = [{k: float(feat[k][i]) for k in ("time_s", "rms_db", "centroid_hz", "bandwidth_hz", "dom_freq_hz", "tonal_ratio", "zcr")}
-            for i in range(feat["time_s"].size)]
-    ev_rows = [{"start_s": e["start_s"], "end_s": e["end_s"], "duration_s": e["duration_s"],
-                "heuristic_score": e["heuristic_score"], **e["features"]} for e in res["events"]]
-    S = sg.stft_db(mono, fs, 1024, 256)
-    db = S["magnitude_db"]; st_t = max(1, db.shape[1] // 500); st_f = max(1, db.shape[0] // 200)
-    spec = {"times_s": S["times_s"][::st_t].tolist(), "freqs_hz": S["freqs_hz"][::st_f].tolist(),
-            "magnitude_db": np.round(db[::st_f, ::st_t], 1).tolist(), "reference": S["reference"],
-            "note": "event times use the same seconds axis as the audio; frame centre = (m*hop + frame/2)/fs"}
-    job = store.put("job", {"mono": mono, "fs": fs, "feat": feat, "meta": a["meta"], "name": a["name"], "created": time.time(),
-                            "audio_id": audio_id, "events": res["events"], "ev_csv": _csv(ev_rows), "feat_csv": _csv(rows),
-                            "config": {"detector": res["config"], "features": feat["meta"], "preprocessing": steps}})
-    step = max(1, len(rows) // 1500)
-    return {"job_id": job, "engine": "python-numpy/scipy", "preprocessing": steps, "events": res["events"],
-            "config": {"detector": res["config"], "features": feat["meta"]}, "spectrogram": spec,
-            "features": {k: [r[k] for r in rows[::step]] for k in rows[0]} if rows else {},
-            "waveform": _wave_payload(x, fs),
+    feat, events = main["feat"], main["events"]
+    n = feat["time_s"].size
+    rows = [{k: float(feat[k][i]) for k in RS_FEATURE_COLS} for i in range(n)]
+    ev_rows = [{"start_s": e["start_s"], "end_s": e["end_s"], "duration_s": e["duration_s"], "label": e["label"],
+                "heuristic_score": e["heuristic_score"], "pattern": e["trajectory"]["pattern"], **e["features"], "explanation": e["explanation"]}
+               for e in events]
+    steps = pre["steps"] + pre["processing_steps"]
+    config = {"detector": main["detector"], "features": feat["meta"], "preprocessing": steps, "detect_on": use,
+              "request": req.model_dump(), "engine": "python-numpy/scipy"}
+    total = float(sum(e["duration_s"] for e in events))
+    job = store.put("job", {"mono": chosen, "mono_original": pre["original"], "mono_processed": pre["processed"], "x": x, "fs": fs, "feat": feat,
+                            "meta": a["meta"], "name": a["name"], "created": time.time(), "audio_id": audio_id, "events": events,
+                            "ev_csv": _csv(ev_rows), "feat_csv": _csv(rows), "config": config, "detect_on": use})
+    duration = x.shape[1] / fs
+    comparison = None
+    if other is not None:
+        comparison = {use: _version_payload(chosen, fs, feat, events),
+                      other[0]: _version_payload(pre[other[0]], fs, other[1]["feat"], other[1]["events"]),
+                      "note": "Detection was run on both versions with identical settings. A difference in events does not show that "
+                              "preprocessing improved or harmed detection in general; that needs labelled recordings."}
+    return {"job_id": job, "engine": "python-numpy/scipy", "processing_s": time.perf_counter() - t_start,
+            "detect_on": use, "detect_on_note": f"Results were produced from the {use} audio ({'filtered/noise-reduced' if use == 'processed' else 'channel mix + DC removal only'}).",
+            "preprocessing": {"active": active, "steps": pre["steps"], "processing_steps": pre["processing_steps"]},
+            "summary": {"duration_s": duration, "sample_rate_hz": fs, "channels": int(x.shape[0]), "n_events": len(events),
+                        "total_event_s": total, "event_fraction": total / duration if duration else 0.0},
+            "events": events, "config": {"detector": main["detector"], "features": feat["meta"]},
+            "tracks": rsvc.tracks_payload(feat), "spectrum": spec, "spectrogram": sgram, "spectrogram_original": sgram_orig,
+            "comparison": comparison, "waveform": _wave_payload(x, fs),
+            "waveform_processed": _wave_payload(pre["processed"][None, :], fs) if active else None,
             "disclaimer": "Academic prototype: candidate events are heuristic and NOT a safety-critical warning."}
+
+
+def _wav_response(y, fs, name, headers=None):
+    body, _ = audio_io.encode_wav(y, fs, "float32")
+    return Response(body, media_type="audio/wav", headers={"Content-Disposition": f'attachment; filename="{name}"', **(headers or {})})
+
+
+@router.get("/roadsonic/{job_id}/audio")
+def rs_audio(job_id: str, version: str = "original"):
+    j = _rs_job(job_id)
+    if version == "original":
+        return _wav_response(j["x"], j["fs"], "roadsonic_original.wav")
+    if version == "processed":
+        if j["mono_processed"] is None:
+            raise HTTPException(404, "no processed version exists for this analysis (no filter or noise reduction configured)")
+        y, g = enh.peak_guard(j["mono_processed"][None, :], -0.5)
+        return _wav_response(y, j["fs"], "roadsonic_processed.wav", {"X-Peak-Guard-Gain-Db": f"{g:.3f}"})
+    raise HTTPException(422, "version must be original or processed")
+
+
+@router.get("/roadsonic/{job_id}/event/{index}/audio")
+def rs_event_audio(job_id: str, index: int, pre: float = 2.0, post: float = 2.0, version: str = "original"):
+    j = _rs_job(job_id)
+    if not 0 <= index < len(j["events"]):
+        raise HTTPException(404, "event index out of range")
+    if not (0 <= pre <= 30 and 0 <= post <= 30):
+        raise HTTPException(422, "pre and post context must be within 0-30 s")
+    if version == "processed" and j["mono_processed"] is None:
+        raise HTTPException(404, "no processed version exists for this analysis")
+    if version not in ("original", "processed"):
+        raise HTTPException(422, "version must be original or processed")
+    e, fs = j["events"][index], j["fs"]
+    src = j["x"] if version == "original" else j["mono_processed"][None, :]
+    clip, i0, i1 = rsvc.event_clip(src, fs, e, pre, post)
+    return _wav_response(clip, fs, f"roadsonic_event_{index + 1}.wav",
+                         {"X-Clip-Start-S": f"{i0 / fs:.4f}", "X-Clip-End-S": f"{i1 / fs:.4f}", "X-Event-Start-S": f"{e['start_s']:.4f}", "X-Event-End-S": f"{e['end_s']:.4f}"})
+
+
+@router.post("/roadsonic/{job_id}/evaluate")
+def rs_evaluate(job_id: str, req: EvaluateReq):
+    """Event-level evaluation against intervals YOU label. Meaningful only with genuine ground truth."""
+    j = _rs_job(job_id)
+    duration = j["x"].shape[1] / j["fs"]
+    truth = [(t.start_s, t.end_s) for t in req.truth]
+    if any(b > duration + 1e-6 for _, b in truth):
+        raise HTTPException(422, f"a labelled interval ends after the recording ({duration:.2f} s)")
+    try:
+        r = evaluate_events(j["events"], truth, duration, req.min_iou)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    r["note"] = "Computed from your labels and this run's settings; it does not generalise to other recordings. Settings tuned on the same recording inflate these numbers."
+    return r
 
 
 @router.get("/roadsonic/{job_id}/export")
 def rs_export(job_id: str, kind: str = "events_csv"):
-    j = _job(job_id)
+    j = _rs_job(job_id)
+    summary = {"n_events": len(j["events"]), "total_event_s": float(sum(e["duration_s"] for e in j["events"]))}
     m = {"events_csv": (j["ev_csv"], "text/csv", "events.csv"), "features_csv": (j["feat_csv"], "text/csv", "features.csv"),
          "events_json": (json.dumps(j["events"], indent=2), "application/json", "events.json"),
-         "config_json": (json.dumps(j["config"], indent=2), "application/json", "detection_config.json")}
+         "config_json": (json.dumps(j["config"], indent=2), "application/json", "detection_config.json"),
+         "results_json": (json.dumps({"disclaimer": "Academic prototype; candidate events only", "summary": summary, "config": j["config"],
+                                      "events": j["events"], "source_label": j.get("name")}, indent=2), "application/json", "roadsonic_results.json")}
     if kind not in m:
         raise HTTPException(422, f"kind must be one of {list(m)}")
     body, mt, fn = m[kind]
@@ -334,10 +406,7 @@ def clearvoice_report(job_id: str, format: str = "html"):
 
 @router.get("/roadsonic/{job_id}/report")
 def roadsonic_report(job_id: str, format: str = "html"):
-    j = _job(job_id)
-    if "events" not in j:
-        raise HTTPException(404, "not a RoadSonic job")
-    return _report_response(rb.roadsonic_report, j, format, "roadsonic_report")
+    return _report_response(rb.roadsonic_report, _rs_job(job_id), format, "roadsonic_report")
 
 
 @router.get("/history")

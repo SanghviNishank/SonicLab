@@ -90,3 +90,10 @@ def test_store_ttl_expiry():
     jid = store.put("job", {"name": "t"})
     store._items[jid]["t"] -= 10 ** 6
     assert store.get(jid, "job") is None
+
+
+def test_roadsonic_report_includes_explanations_pattern_and_audio_version():
+    job = rs_job(); job["detect_on"] = "processed"
+    h = reports.to_html(rb.roadsonic_report(job, with_plots=False))
+    assert "Why each interval was flagged" in h and "Flagged because every rule passed" in h
+    assert "oscillating sweep" in h and "produced from the processed audio" in h and "flatness" in h

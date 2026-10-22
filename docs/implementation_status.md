@@ -31,3 +31,10 @@ Verified (sandbox): 110 tests pass (87 uploaded-state + 23 new: VAD 7, Wiener/ga
 Measured on synthetic speech + white noise only: lecture_speech improves SNR vs the known clean signal by about 6-9 dB (input 11.3/7.8/3.4/-2.6 dB -> 17.6/15.4/12.0/6.8 dB). VAD finds all four known intervals at 13 dB and 5 dB input SNR, fails at about -7 dB (documented test), and flags sustained periodic music as speech-like (documented test).
 Unverified: frontend changes (advanced panel, reset, processing time) - not built here; the 2 new API tests (need FastAPI); MATLAB.
 Found during testing: the synthetic `speech_like` generator has 28 % of its energy below 70 Hz (DC amplified by the tilt filter), which made a rumble high-pass look harmful; `speech_like_realistic` removes it. Earlier synthetic SNR figures that used plain gating without a high-pass are unaffected.
+
+
+## Update: RoadSonic completion (this iteration)
+Sandbox run (local pytest-style runner): **147 passed 0 failed** (110 inherited + new RoadSonic tests: detector/trajectory/clamping/max-duration/merge/sensitivity/evaluation, service orchestration, benchmark-derived limits, report content).
+**Verified (executed here):** features (flatness, prominence, frame/hop/time axes), detector rules and edge cases, evaluation metrics, preprocessing + comparison + clip logic (service layer), payload size bounds, benchmark (`scripts/roadsonic_benchmark.py`), report HTML/PDF content.
+**Implemented, NOT executed here:** pydantic request validation (`schemas/roadsonic.py` - pydantic not installed in the sandbox), the new FastAPI routes and their 9 new API tests in `tests/test_api.py` (run `pytest` on your machine), and the whole React RoadSonic dashboard (no TypeScript/npm available here; only a bracket-balance check was run). **Expect to fix small TypeScript errors on first `npm run build`.**
+**Not implemented:** ML classifier (no licensed dataset), RoadSonic MATLAB functions / MATLAB cross-check, annotated full-length WAV, frontend automated tests (vitest not added), screenshots.
