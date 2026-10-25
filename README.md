@@ -523,3 +523,14 @@ It writes `analysis.json` + figures and re-opens the WAV to prove it contains th
 ## RoadSonic (this iteration)
 Dashboard tabs: Overview (upload, metrics, timeline), Analysis (waveform, FFT, spectrogram, dominant-frequency track, feature tracks), Events (evidence, playback with context, clip download), Compare (original vs processed), Evaluation (your labels -> precision/recall/F1), Export (CSV/JSON/HTML/PDF). Settings (with help text, presets, reset, rerun) are served by `GET /api/v1/roadsonic/defaults`.
 Demo audio: `python scripts\make_demo_audio.py` (writes `demo_audio\*.wav`, already included). Benchmark: `python scripts\roadsonic_benchmark.py`. Docs: `docs/roadsonic.md`, `docs/roadsonic_audit.md`.
+
+
+## SonicSense frontend (routed workflows)
+```powershell
+cd frontend
+npm.cmd install          # adds framer-motion, lucide-react, three
+npm.cmd run test:logic   # Node >= 22.6: workflow/validation/session/demo-signal tests
+npm.cmd run build        # type-check + production build (fix any TypeScript errors it reports)
+npm.cmd run dev          # http://localhost:5173
+```
+Backend URL: set `VITE_API_URL` (default `http://127.0.0.1:8000`). Allowed dev origins are set by `CS_CORS` on the backend. Routes and session model: `docs/sonicsense_frontend.md`.

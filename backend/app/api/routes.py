@@ -73,6 +73,28 @@ async def upload(file: UploadFile = File(...)):
     return {"metadata": meta, "statistics": st.audio_statistics(x, fs), "waveform": _wave_payload(x, fs)}
 
 
+@router.get("/audio/{audio_id}/summary")
+def audio_summary(audio_id: str):
+    """Rebuilds the upload response from the stored recording (used to restore a session after a page reload)."""
+    a = _audio(audio_id)
+    return {"metadata": a["meta"], "statistics": st.audio_statistics(a["x"], a["fs"]), "waveform": _wave_payload(a["x"], a["fs"]), "filename": a["name"]}
+
+
+class RangeReq(BaseModel):
+    start_s: float = Field(ge=0)
+    end_s: float = Field(gt=0)
+    channel: int = Field(0, ge=0, le=1)
+
+
+@router.post("/audio/{audio_id}/range-stats")
+def range_stats(audio_id: str, req: RangeReq):
+    a = _audio(audio_id)
+    try:
+        return st.range_statistics(a["x"], a["fs"], req.start_s, req.end_s, req.channel)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
 @router.get("/audio/{audio_id}/file")
 def original_file(audio_id: str):
     a = _audio(audio_id)
@@ -130,6 +152,26 @@ class FilterReq(BaseModel):
     cutoff_hz: list[float]
     method: str = "zero_phase"
     analysis: AnalyzeReq = AnalyzeReq()
+
+
+class FilterPreviewReq(BaseModel):
+    filter_type: str
+    order: int = 4
+    cutoff_hz: list[float] = Field(max_length=2)
+    method: str = "zero_phase"
+
+
+@router.post("/clearvoice/{audio_id}/filter/preview")
+def filter_preview(audio_id: str, req: FilterPreviewReq):
+    """Theoretical response of the designed filter for THIS recording's sample rate. No audio is processed."""
+    a = _audio(audio_id)
+    try:
+        p = flt.preview_response(req.filter_type, req.order, req.cutoff_hz, a["fs"], req.method)
+    except ValueError as e:                              # FilterError is a ValueError
+        raise HTTPException(422, str(e))
+    r = p["response"]; sub = np.unique(np.linspace(0, r["freqs_hz"].size - 1, 600).astype(int))
+    return {"settings": p["settings"], "attenuation_at_cutoff": p["attenuation_at_cutoff"], "explanation": p["explanation"],
+            "response": {"freqs_hz": r["freqs_hz"][sub].tolist(), "magnitude_db": r["magnitude_db"][sub].tolist(), "effective": r["effective"]}}
 
 
 @router.post("/clearvoice/{audio_id}/filter")

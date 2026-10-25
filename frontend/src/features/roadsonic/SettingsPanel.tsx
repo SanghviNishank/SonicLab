@@ -1,54 +1,8 @@
 import { useState } from "react";
 
-const THRESHOLDS = ["min_tonal_ratio", "min_tonal_fraction", "min_f0_range_hz", "min_f0_std_hz"];
+import { applyPreset, buildSettings, editDetector, toRequest, validate } from "../../logic/roadsonicSettings.ts";
+export { buildSettings, toRequest, validate };
 const stepFor = (max: number) => (max <= 1 ? 0.05 : max <= 10 ? 0.1 : 1);
-
-export function buildSettings(defaults: any): any {
-  const p = defaults.params;
-  const pick = (g: string) => Object.fromEntries(Object.entries(p[g]).filter(([k]) => !["order", "nr_strength", "nr_max_db"].includes(k)).map(([k, v]: any) => [k, v.default]));
-  return {
-    sensitivity: "",
-    features: pick("analysis"), detector: pick("detector"),
-    preprocessing: {
-      channel_mode: "mix", remove_dc: true,
-      filter: { type: "none", c1: 300, c2: 3000, order: p.preprocessing.order.default, method: "zero_phase" },
-      noise_reduction: { enabled: false, strength: p.preprocessing.nr_strength.default, max_reduction_db: p.preprocessing.nr_max_db.default },
-    },
-    detect_on: "auto", compare: true,
-  };
-}
-
-export function toRequest(s: any): any {
-  const f = s.preprocessing.filter;
-  const cutoff = f.type === "none" ? [] : f.type === "bandpass" ? [Number(f.c1), Number(f.c2)] : [Number(f.c1)];
-  const num = (o: any) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, Number(v)]));
-  return {
-    sensitivity: s.sensitivity || null, features: num(s.features), detector: num(s.detector),
-    preprocessing: { channel_mode: s.preprocessing.channel_mode, remove_dc: s.preprocessing.remove_dc,
-      filter: { type: f.type, cutoff_hz: cutoff, order: Number(f.order), method: f.method },
-      noise_reduction: { enabled: s.preprocessing.noise_reduction.enabled, strength: Number(s.preprocessing.noise_reduction.strength), max_reduction_db: Number(s.preprocessing.noise_reduction.max_reduction_db) } },
-    detect_on: s.detect_on, compare: s.compare,
-  };
-}
-
-export function validate(s: any, defaults: any): string[] {
-  const errs: string[] = [];
-  const check = (group: string, vals: any) => {
-    for (const [k, spec] of Object.entries(defaults.params[group]) as any) {
-      if (!(k in vals)) continue;
-      const v = Number(vals[k]);
-      if (!Number.isFinite(v) || v < spec.min || v > spec.max) errs.push(`${spec.label}: must be between ${spec.min} and ${spec.max} ${spec.unit}`);
-    }
-  };
-  check("analysis", s.features); check("detector", s.detector);
-  if (Number(s.features.hop_ms) > Number(s.features.frame_ms)) errs.push("Hop length must not exceed frame length");
-  if (Number(s.features.band_lo) >= Number(s.features.band_hi)) errs.push("Band low edge must be below band high edge");
-  if (Number(s.detector.window_step_s) > Number(s.detector.window_s)) errs.push("Window step must not exceed the decision window");
-  const f = s.preprocessing.filter;
-  if (f.type !== "none" && !(Number(f.c1) > 0)) errs.push("Filter cutoff must be a positive number of Hz");
-  if (f.type === "bandpass" && !(Number(f.c1) < Number(f.c2))) errs.push("Band-pass needs low cutoff < high cutoff");
-  return errs;
-}
 
 function Field({ spec, name, value, onChange }: { spec: any; name: string; value: any; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false);
@@ -65,37 +19,31 @@ function Field({ spec, name, value, onChange }: { spec: any; name: string; value
   );
 }
 
-export default function SettingsPanel({ defaults, s, setS, dirty, busy, hasAudio, onRun, onReset }:
-  { defaults: any; s: any; setS: (x: any) => void; dirty: boolean; busy: boolean; hasAudio: boolean; onRun: () => void; onReset: () => void }) {
+export default function SettingsPanel({ defaults, s, setS, dirty, busy, hasAudio, onRun, onReset, sections = ["sensitivity", "analysis", "detector", "preprocessing"], runLabel, embedded }:
+  { defaults: any; s: any; setS: (x: any) => void; dirty: boolean; busy: boolean; hasAudio: boolean; onRun: () => void; onReset: () => void; sections?: string[]; runLabel?: string; embedded?: boolean }) {
+  const show = (k: string) => sections.includes(k);
   const errs = validate(s, defaults);
-  const setGroup = (g: "features" | "detector", k: string, v: string) => {
-    const next = { ...s, [g]: { ...s[g], [k]: v } };
-    if (g === "detector" && THRESHOLDS.includes(k)) next.sensitivity = "";      // editing a threshold leaves the preset
-    setS(next);
-  };
+  const setGroup = (g: "features" | "detector", k: string, v: string) => setS(g === "detector" ? editDetector(s, k, v) : { ...s, features: { ...s.features, [k]: v } });
   const setPre = (patch: any) => setS({ ...s, preprocessing: { ...s.preprocessing, ...patch } });
   const f = s.preprocessing.filter, nr = s.preprocessing.noise_reduction;
-  const preset = (lvl: string) => {
-    if (!lvl) return setS({ ...s, sensitivity: "" });
-    setS({ ...s, sensitivity: lvl, detector: { ...s.detector, ...defaults.sensitivity_presets[lvl] } });
-  };
+  const preset = (lvl: string) => setS(applyPreset(s, lvl, defaults.sensitivity_presets));
   const render = (group: string, g: "features" | "detector", skip: string[] = []) =>
     Object.entries(defaults.params[group]).filter(([k]) => !skip.includes(k)).map(([k, spec]: any) =>
       <Field key={k} name={k} spec={spec} value={s[g][k]} onChange={(v) => setGroup(g, k, v)} />);
   return (
-    <aside className="rs-settings" aria-label="Detection settings">
+    <aside className={"rs-settings" + (embedded ? " embedded" : "")} aria-label="Detection settings">
       <div className="rs-settings-head">
         <h2>Detection settings</h2>
         <span className={"rs-chip " + (dirty ? "warn" : "ok")} role="status">{dirty ? "● Settings changed - rerun needed" : "✓ Matches last run"}</span>
       </div>
-      <details open><summary>Sensitivity</summary>
+      {show("sensitivity") && <details open><summary>Sensitivity</summary>
         <label>Preset<select value={s.sensitivity} onChange={(e) => preset(e.target.value)}>
           <option value="">Custom (use the values below)</option><option value="low">Low - stricter</option><option value="medium">Medium - recommended</option><option value="high">High - more permissive</option></select></label>
         <p className="muted">{defaults.sensitivity_note}</p>
-      </details>
-      <details open><summary>Analysis</summary><div className="rs-fields">{render("analysis", "features")}</div></details>
-      <details open><summary>Detector rules</summary><div className="rs-fields">{render("detector", "detector")}</div></details>
-      <details><summary>Preprocessing (optional)</summary>
+      </details>}
+      {show("analysis") && <details open><summary>Analysis</summary><div className="rs-fields">{render("analysis", "features")}</div></details>}
+      {show("detector") && <details open><summary>Detector rules</summary><div className="rs-fields">{render("detector", "detector")}</div></details>}
+      {show("preprocessing") && <details open><summary>Preprocessing (optional)</summary>
         <p className="muted">Filtering can remove useful siren harmonics or modulation. The original recording is never modified.</p>
         <div className="rs-fields">
           <label>Channels<select value={s.preprocessing.channel_mode} onChange={(e) => setPre({ channel_mode: e.target.value })}>
@@ -117,7 +65,7 @@ export default function SettingsPanel({ defaults, s, setS, dirty, busy, hasAudio
             <option value="auto">Auto (processed if preprocessing is on)</option><option value="original">Original (mix + DC only)</option><option value="processed">Processed</option></select></label>
           <label className="inline"><input type="checkbox" checked={s.compare} onChange={(e) => setS({ ...s, compare: e.target.checked })} /> Also run the other version for comparison</label>
         </div>
-      </details>
+      </details>}
       {errs.length > 0 && <ul className="error" role="alert">{errs.map((e, i) => <li key={i}>{e}</li>)}</ul>}
       <div className="actions">
         <button className="btn" disabled={busy || !hasAudio || errs.length > 0} onClick={onRun}>{busy ? "Analyzing…" : dirty ? "Rerun analysis" : "Run analysis"}</button>

@@ -38,3 +38,9 @@ Sandbox run (local pytest-style runner): **147 passed 0 failed** (110 inherited 
 **Verified (executed here):** features (flatness, prominence, frame/hop/time axes), detector rules and edge cases, evaluation metrics, preprocessing + comparison + clip logic (service layer), payload size bounds, benchmark (`scripts/roadsonic_benchmark.py`), report HTML/PDF content.
 **Implemented, NOT executed here:** pydantic request validation (`schemas/roadsonic.py` - pydantic not installed in the sandbox), the new FastAPI routes and their 9 new API tests in `tests/test_api.py` (run `pytest` on your machine), and the whole React RoadSonic dashboard (no TypeScript/npm available here; only a bracket-balance check was run). **Expect to fix small TypeScript errors on first `npm run build`.**
 **Not implemented:** ML classifier (no licensed dataset), RoadSonic MATLAB functions / MATLAB cross-check, annotated full-length WAV, frontend automated tests (vitest not added), screenshots.
+
+
+## Update: SonicSense routed frontend (this iteration)
+Backend local runner: **150 passed 0 failed**. Frontend logic (`npm run test:logic`): **# pass 9 # fail 0 **.
+New backend: `/audio/{id}/summary`, `/audio/{id}/range-stats`, `/clearvoice/{id}/filter/preview` (core functions unit-tested; routes + pydantic validation unexecuted here).
+Frontend: 16 routed steps, session context + restore, A/B player, XHR upload progress, 3D hero (lazy, fallback), design tokens, light/dark. **Never compiled or opened in a browser** - expect TypeScript/runtime fixes on first `npm run build` / `npm run dev`. See `docs/sonicsense_frontend.md` for the full verified/unverified table.

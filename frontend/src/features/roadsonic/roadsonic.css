@@ -1,12 +1,4 @@
-/* RoadSonic identity: "Emergency Audio Intelligence Lab" - navy/charcoal, cyan signal, amber candidates. Scoped to .rs */
-.rs { --rs-bg:#0b1220; --rs-panel:#111a2c; --rs-line:#22314d; --rs-fg:#e5edf9; --rs-mute:#93a4c0; --rs-cyan:#22d3ee; --rs-cand:#ffb020; --rs-ok:#4ade80; }
-:root[data-theme="light"] .rs { --rs-bg:#eef3fa; --rs-panel:#ffffff; --rs-line:#c9d5e8; --rs-fg:#0f1b2e; --rs-mute:#51627f; --rs-cyan:#0a7aa8; --rs-cand:#b06a00; --rs-ok:#15803d; }
-.rs { --bg:var(--rs-bg); --card:var(--rs-panel); --border:var(--rs-line); --fg:var(--rs-fg); --muted:var(--rs-mute); --accent:var(--rs-cyan);
-  background:
-    linear-gradient(var(--rs-line) 1px, transparent 1px) 0 0/40px 40px,
-    linear-gradient(90deg, var(--rs-line) 1px, transparent 1px) 0 0/40px 40px, var(--rs-bg);
-  background-blend-mode:soft-light; border:1px solid var(--rs-line); border-radius:16px; padding:1rem; color:var(--rs-fg); min-width:0; }
-.rs .card { background:var(--rs-panel); }
+/* RoadSonic component styles (colours come from global tokens; module accent set by [data-module]) */
 .rs-top { display:flex; flex-wrap:wrap; align-items:center; gap:.75rem 1.25rem; }
 .rs-brand { display:flex; align-items:center; gap:.6rem; } .rs-brand h1 { margin:0; font-size:1.4rem; letter-spacing:.04em; }
 .rs-mark { color:var(--rs-cyan); font-size:1.8rem; }
@@ -15,8 +7,8 @@
 .rs-nav button.on { color:var(--rs-fg); border-color:var(--rs-cyan); background:var(--rs-panel); box-shadow:inset 0 -2px 0 var(--rs-cyan); }
 .rs-chip { font-size:.8rem; padding:.25rem .7rem; border-radius:99px; border:1px solid var(--rs-line); color:var(--rs-mute); }
 .rs-chip.ok { color:var(--rs-ok); border-color:var(--rs-ok); } .rs-chip.warn { color:var(--rs-cand); border-color:var(--rs-cand); } .rs-chip.run { color:var(--rs-cyan); border-color:var(--rs-cyan); }
-.rs-layout { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:1rem; align-items:start; } .rs-main { display:flex; flex-direction:column; gap:1rem; min-width:0; }
-@media (max-width: 1000px) { .rs-layout { grid-template-columns:minmax(0,1fr); } .rs-settings { order:-1; } }
+.rs-layout-unused { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:1rem; align-items:start; } .rs-main { display:flex; flex-direction:column; gap:1rem; min-width:0; }
+@media (max-width: 1000px) { .rs-layout-unused { grid-template-columns:minmax(0,1fr); } .rs-settings { order:-1; } }
 .rs-settings { background:var(--rs-panel); border:1px solid var(--rs-line); border-radius:14px; padding:1rem; position:sticky; top:4.2rem; max-height:calc(100vh - 5rem); overflow:auto; }
 @media (max-width: 1000px) { .rs-settings { position:static; max-height:none; } }
 .rs-settings-head { display:flex; flex-direction:column; gap:.4rem; } .rs-settings h2 { margin:0; font-size:1.05rem; }
@@ -37,3 +29,6 @@
 @media (max-width: 640px) { .rs-event-row { grid-template-columns:2rem 1fr; } .rs-event-row span:nth-child(n+3) { grid-column:2; } }
 .rs-feats { border:1px solid var(--rs-line); border-radius:10px; display:flex; flex-wrap:wrap; gap:.5rem 1.2rem; } .rs textarea { width:100%; background:var(--rs-bg); color:var(--rs-fg); border:1px solid var(--rs-line); border-radius:8px; padding:.5rem; font:inherit; }
 .rs dl { display:grid; gap:.4rem; } .rs dt { font-weight:600; color:var(--rs-cyan); } .rs dd { margin:0 0 .2rem; color:var(--rs-mute); }
+
+.rs-settings.embedded { position: static; max-height: none; border: 0; padding: 0; background: transparent; }
+.rs-settings { background: var(--surface); }

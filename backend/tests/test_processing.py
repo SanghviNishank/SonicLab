@@ -161,3 +161,33 @@ def test_comparison_metrics():
     assert compare_signals(x, x)["per_channel"][0]["mse"] == 0
     with pytest.raises(ValueError):
         compare_signals(x, x[:-1])
+
+
+def test_range_statistics_uses_full_resolution_samples_and_correct_indices():
+    from app.processing.statistics import range_statistics, channel_statistics
+    x = np.concatenate([np.zeros(FS), 0.5 * np.ones(FS), np.zeros(FS)])            # 1 s silence, 1 s DC 0.5, 1 s silence
+    r = range_statistics(x, FS, 1.0, 2.0)
+    assert (r["start_sample"], r["end_sample"], r["n_samples"]) == (FS, 2 * FS, FS)
+    assert abs(r["statistics"]["mean"] - 0.5) < 1e-12 and abs(r["statistics"]["rms"] - 0.5) < 1e-12 and r["statistics"]["variance"] < 1e-24
+    r2 = range_statistics(np.vstack([x, 2 * x]), FS, 1.25, 1.75, channel=1)
+    assert r2["start_sample"] == int(round(1.25 * FS)) and abs(r2["statistics"]["peak_abs"] - 1.0) < 1e-12 and r2["channel"] == 1
+    big = tone(1000, FS, 3.0, 0.8); rr = range_statistics(big, FS, 0.5, 2.5)["statistics"]
+    assert abs(rr["rms"] - channel_statistics(big[int(0.5 * FS):int(2.5 * FS)], FS)["rms"]) < 1e-12
+
+def test_range_statistics_validation():
+    from app.processing.statistics import range_statistics
+    x = tone(500, FS, 1.0)
+    for a, b in ((-0.1, 0.5), (0.5, 0.5), (0.8, 0.2), (0.0, 1.5), (float("nan"), 0.5), (0.5, float("inf")), (0.0, 1.0 / FS)):
+        with pytest.raises(ValueError): range_statistics(x, FS, a, b)
+    with pytest.raises(ValueError): range_statistics(x, FS, 0.0, 0.5, channel=3)
+
+def test_filter_preview_matches_applied_filter_and_validates():
+    from app.processing.filters import preview_response, run_filter
+    p = preview_response("lowpass", 4, [1000.0], FS, "causal"); r = run_filter(tone(100, FS), FS, "lowpass", 4, [1000.0], "causal")["response"]
+    interp = np.interp(p["response"]["freqs_hz"], r["freqs_hz"], r["magnitude_db"])          # same filter, different frequency grids
+    assert np.max(np.abs(interp - p["response"]["magnitude_db"])) < 0.05
+    assert abs(p["attenuation_at_cutoff"][0]["magnitude_db"] + 3.01) < 0.2
+    z = preview_response("lowpass", 4, [1000.0], FS, "zero_phase"); assert abs(z["attenuation_at_cutoff"][0]["magnitude_db"] + 6.02) < 0.3
+    assert p["settings"]["normalized_cutoff"] == [1000.0 / 8000.0] and p["settings"]["nyquist_hz"] == 8000.0
+    for bad in (("lowpass", 4, [9000.0]), ("bandpass", 4, [2000.0, 1000.0]), ("lowpass", 0, [100.0]), ("notch", 4, [100.0]), ("lowpass", 4, [-1.0])):
+        with pytest.raises(FilterError): preview_response(*bad, FS)

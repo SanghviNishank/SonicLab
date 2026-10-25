@@ -211,3 +211,28 @@ def test_roadsonic_stereo_and_sample_rates_via_api():
         aid, _ = _siren_upload(fs, stereo=True)
         j = c.post(f"/api/v1/roadsonic/{aid}/detect", json={"preprocessing": {"channel_mode": "mix"}}).json()
         assert j["summary"]["sample_rate_hz"] == fs and j["summary"]["channels"] == 2 and j["summary"]["n_events"] == 1
+
+
+def test_audio_summary_restores_upload_payload_and_expires():
+    up = upload(tone(1000, FS, 1.0, 0.5)).json(); aid = up["metadata"]["audio_id"]
+    s = c.get(f"/api/v1/audio/{aid}/summary").json()
+    assert s["metadata"]["sample_rate_hz"] == FS and s["statistics"]["per_channel"][0]["rms"] == up["statistics"]["per_channel"][0]["rms"] and s["waveform"]["channels"]
+    assert c.delete(f"/api/v1/audio/{aid}").status_code == 200
+    assert c.get(f"/api/v1/audio/{aid}/summary").status_code == 404
+
+def test_range_stats_endpoint_exact_on_full_resolution_samples():
+    x = np.concatenate([np.zeros(FS), 0.5 * np.ones(FS)]); aid = upload(x).json()["metadata"]["audio_id"]
+    r = c.post(f"/api/v1/audio/{aid}/range-stats", json={"start_s": 1.0, "end_s": 2.0}).json()
+    assert r["n_samples"] == FS and abs(r["statistics"]["mean"] - 0.5) < 1e-6
+    for body in ({"start_s": 1.0, "end_s": 5.0}, {"start_s": 1.0, "end_s": 1.0}, {"start_s": -1, "end_s": 1.0}, {"start_s": 0.0, "end_s": 1.0, "channel": 1}):
+        assert c.post(f"/api/v1/audio/{aid}/range-stats", json=body).status_code == 422, body
+
+def test_filter_preview_endpoint_no_audio_changed_and_validation():
+    aid = upload(tone(300, FS)).json()["metadata"]["audio_id"]
+    j = c.post(f"/api/v1/clearvoice/{aid}/filter/preview", json={"filter_type": "bandpass", "order": 4, "cutoff_hz": [500, 2000]}).json()
+    assert j["settings"]["nyquist_hz"] == FS / 2 and len(j["response"]["freqs_hz"]) == len(j["response"]["magnitude_db"]) and len(j["attenuation_at_cutoff"]) == 2
+    assert c.post(f"/api/v1/clearvoice/{aid}/filter/preview", json={"filter_type": "lowpass", "cutoff_hz": [9000]}).status_code == 422
+    assert c.post(f"/api/v1/clearvoice/{aid}/filter/preview", json={"filter_type": "bandpass", "cutoff_hz": [3000, 1000]}).status_code == 422
+    n_before = len(c.get("/api/v1/history").json()["items"])
+    c.post(f"/api/v1/clearvoice/{aid}/filter/preview", json={"filter_type": "lowpass", "cutoff_hz": [1000]})
+    assert len(c.get("/api/v1/history").json()["items"]) == n_before                               # preview creates no job

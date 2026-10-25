@@ -1,0 +1,32 @@
+/* SonicSense design tokens. Dark is the primary theme; light is a full alternative. */
+:root {
+  --font-ui: Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
+  --bg: #060b17; --bg-2: #0a1222; --surface: #0e182b; --surface-2: #132038; --border: #1f3050; --border-strong: #2c4268;
+  --fg: #eaf0fa; --muted: #93a3bf; --faint: #5d7090;
+  --cyan: #22d3ee; --violet: #8b7cf6; --mint: #4ade80; --amber: #ffb020; --red: #ff6b6b;
+  --accent: var(--cyan); --accent-2: var(--violet); --on-accent: #031018;
+  --ok: var(--mint); --warn: var(--amber); --err: var(--red);
+  --space-1: .25rem; --space-2: .5rem; --space-3: .75rem; --space-4: 1rem; --space-5: 1.5rem; --space-6: 2.5rem; --space-7: 4rem;
+  --radius-s: 6px; --radius: 10px; --radius-l: 16px;
+  --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 10px 30px -12px rgba(0,0,0,.6);
+  --dur: 180ms; --ease: cubic-bezier(.2,.7,.2,1);
+  --chart-1: #22d3ee; --chart-2: #8b7cf6; --chart-3: #4ade80; --chart-event: #ffb020; --chart-grid: rgba(147,163,191,.18);
+  /* aliases used by RoadSonic components */
+  --rs-bg: var(--bg-2); --rs-panel: var(--surface); --rs-line: var(--border); --rs-fg: var(--fg); --rs-mute: var(--muted);
+  --rs-cyan: var(--cyan); --rs-cand: var(--amber); --rs-ok: var(--mint);
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --bg: #f4f7fc; --bg-2: #e9eff8; --surface: #ffffff; --surface-2: #f1f5fb; --border: #cfd9ea; --border-strong: #aebcd4;
+  --fg: #0e1a2e; --muted: #4a5d7c; --faint: #7a8bab;
+  --cyan: #0a7aa8; --violet: #5b4bd6; --mint: #15803d; --amber: #a85f00; --red: #c62828; --on-accent: #ffffff;
+  --shadow: 0 1px 2px rgba(15,30,60,.08), 0 8px 24px -12px rgba(15,30,60,.18);
+  --chart-1: #0a7aa8; --chart-2: #5b4bd6; --chart-3: #15803d; --chart-event: #a85f00; --chart-grid: rgba(60,80,120,.15);
+  color-scheme: light;
+}
+/* module identities: ClearVoice = cyan/violet (calm, scientific); RoadSonic = amber-led (operational) */
+[data-module="clearvoice"] { --accent: var(--cyan); --accent-2: var(--violet); }
+[data-module="roadsonic"] { --accent: var(--amber); --accent-2: var(--cyan); --on-accent: #1a1100; }
+:root[data-theme="light"] [data-module="roadsonic"] { --on-accent: #ffffff; }
+@media (prefers-reduced-motion: reduce) { :root { --dur: 0.01ms; } *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }

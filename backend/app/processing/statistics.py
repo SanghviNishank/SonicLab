@@ -98,3 +98,19 @@ def downsample_minmax(x: np.ndarray, max_points: int = 4000):
             idx.append(i)
             val.append(x[i])
     return np.asarray(idx), np.asarray(val)
+
+
+def range_statistics(x: np.ndarray, fs: float, t0: float, t1: float, channel: int = 0) -> dict:
+    """Exact statistics of the FULL-RESOLUTION samples in [t0, t1] seconds (never the display-decimated data).
+    Sample indices: i0 = round(t0*fs), i1 = round(t1*fs); the returned start/end are those sample boundaries / fs."""
+    x2 = as_2d(x)
+    if not 0 <= channel < x2.shape[0]:
+        raise ValueError("channel out of range")
+    dur = x2.shape[1] / fs
+    if not (np.isfinite(t0) and np.isfinite(t1)) or t0 < 0 or t1 > dur + 1e-9 or t1 <= t0:
+        raise ValueError(f"range must satisfy 0 <= start < end <= {dur:.6f} s")
+    i0, i1 = int(round(t0 * fs)), min(int(round(t1 * fs)), x2.shape[1])
+    if i1 - i0 < 2:
+        raise ValueError("selected range contains fewer than 2 samples")
+    return {"start_s": i0 / fs, "end_s": i1 / fs, "start_sample": i0, "end_sample": i1, "n_samples": i1 - i0, "channel": channel,
+            "statistics": channel_statistics(x2[channel, i0:i1], fs)}

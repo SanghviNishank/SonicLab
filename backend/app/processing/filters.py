@@ -112,3 +112,20 @@ def run_filter(x: np.ndarray, fs: float, filter_type: str, order: int, cutoff: l
                        "design": "Butterworth, second-order sections", "engine": "python-scipy",
                        "edge_effect_samples_estimate": edge},
             "warnings": warnings}
+
+
+def preview_response(filter_type: str, order: int, cutoff: list[float], fs: float, method: str = "zero_phase", n_points: int = 1024) -> dict:
+    """Designs the filter and returns its theoretical response WITHOUT touching any audio (validates exactly like run_filter)."""
+    validate_filter(filter_type, order, cutoff, fs, method)
+    sos = design_filter(filter_type, order, cutoff, fs)
+    resp = frequency_response(sos, fs, method, n_points)
+    at = []
+    for fc in cutoff:
+        k = int(np.argmin(np.abs(resp["freqs_hz"] - fc)))
+        at.append({"frequency_hz": float(fc), "magnitude_db": float(resp["magnitude_db"][k])})
+    return {"settings": {"filter_type": filter_type, "order": int(order), "cutoff_hz": [float(c) for c in cutoff], "method": method,
+                         "sample_rate": float(fs), "nyquist_hz": fs / 2.0, "normalized_cutoff": [float(c) / (fs / 2.0) for c in cutoff],
+                         "design": "Butterworth, second-order sections"},
+            "response": resp, "attenuation_at_cutoff": at,
+            "explanation": ("Butterworth magnitude is maximally flat in the passband; at the cutoff a single pass is about -3 dB "
+                            "(forward-backward doubles the dB: about -6 dB). Higher order = steeper transition band, more ringing.")}
