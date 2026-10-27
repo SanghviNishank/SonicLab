@@ -48,7 +48,7 @@ def clearvoice_model(*, source_name: str, meta: dict, stats_before: dict, stats_
                             "rows": [[str(i + 1), h["stage"], _fmt(h.get("peak")), _fmt(h.get("rms")), str(h.get("params"))[:300]] for i, h in enumerate(history)]}})
     if metrics:
         s.append({"heading": "Comparison metrics",
-                  "paragraphs": [metrics["note"], "MSE is a measure of signal change; it is not a quality or denoising score. SNR is not reported because no clean reference exists for a real recording."],
+                  "paragraphs": [metrics["note"], f"Computed by: {metrics.get('engine', 'python-scipy')}.", "MSE is a measure of signal change; it is not a quality or denoising score. SNR is not reported because no clean reference exists for a real recording."],
                   "table": {"columns": ["Channel", "RMS before", "RMS after", "RMS change (dB)", "MSE"],
                             "rows": [[str(i), _fmt(m["rms_before"]), _fmt(m["rms_after"]), _fmt(m["rms_change_db"]), _fmt(m["mse"])] for i, m in enumerate(metrics["per_channel"])]}})
     if quality:

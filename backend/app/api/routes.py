@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.processing import audio_io, statistics as st, fft_analysis as fa, spectrogram as sg
 from app.processing import filters as flt, comparison as cmp, voice as vc
 from app.matlab import engine_adapter
-from app.services import store, reports, report_builders as rb, roadsonic as rsvc
+from app.services import store, reports, report_builders as rb, roadsonic as rsvc, metrics_service, engine_verification, siren_model
 from app.schemas.roadsonic import DetectReq, EvaluateReq
 from app.processing import enhance as enh
 from app.processing.siren_detector import evaluate_events
@@ -114,9 +114,10 @@ def _analysis(x2, fs, req: AnalyzeReq) -> dict:
     if req.channel >= x2.shape[0]:
         raise HTTPException(422, "channel index out of range")
     ch = x2[req.channel]
-    sp, spec_engine = engine_adapter.single_sided_spectrum(ch, fs, req.window, req.n_fft)
+    sp, spec_info = engine_adapter.spectrum_info(ch, fs, req.window, req.n_fft)
+    spec_engine = engine_adapter.engine_label(spec_info)
     f, a = _downsample_spec(sp["freqs_hz"], sp["amplitude"])
-    out = {"channel": req.channel, "engine": spec_engine,
+    out = {"channel": req.channel, "engine": spec_engine, "engine_info": spec_info,
            "spectrum": {"freqs_hz": f.tolist(), "amplitude": a.tolist(), "window": sp["window"], "n_fft": sp["n_fft"],
                         "bin_spacing_hz": sp["bin_spacing_hz"], "nominal_resolution_hz": sp["nominal_resolution_hz"],
                         "amplitude_unit": sp["amplitude_unit"],
@@ -167,11 +168,18 @@ def filter_preview(audio_id: str, req: FilterPreviewReq):
     a = _audio(audio_id)
     try:
         p = flt.preview_response(req.filter_type, req.order, req.cutoff_hz, a["fs"], req.method)
+        fd, design_info = engine_adapter.filter_design_info(req.filter_type, req.order, req.cutoff_hz, a["fs"], req.method, 1024)
+    except engine_adapter.EngineError as e:
+        raise HTTPException(503, str(e))
     except ValueError as e:                              # FilterError is a ValueError
         raise HTTPException(422, str(e))
-    r = p["response"]; sub = np.unique(np.linspace(0, r["freqs_hz"].size - 1, 600).astype(int))
+    r = fd["response"]
+    p["attenuation_at_cutoff"] = [{"frequency_hz": float(fc), "magnitude_db": float(r["magnitude_db"][int(np.argmin(np.abs(r["freqs_hz"] - fc)))])}
+                                  for fc in req.cutoff_hz]
+    sub = np.unique(np.linspace(0, r["freqs_hz"].size - 1, 600).astype(int))
     return {"settings": p["settings"], "attenuation_at_cutoff": p["attenuation_at_cutoff"], "explanation": p["explanation"],
-            "response": {"freqs_hz": r["freqs_hz"][sub].tolist(), "magnitude_db": r["magnitude_db"][sub].tolist(), "effective": r["effective"]}}
+            "response": {"freqs_hz": r["freqs_hz"][sub].tolist(), "magnitude_db": r["magnitude_db"][sub].tolist(), "effective": r["effective"]},
+            "engine_info": design_info}
 
 
 @router.post("/clearvoice/{audio_id}/filter")
@@ -182,9 +190,11 @@ def filter_audio(audio_id: str, req: FilterReq):
     try:
         r = flt.run_filter(x, fs, req.filter_type, req.order, req.cutoff_hz, req.method)
         y = r["output"]
-        metrics = cmp.compare_signals(x, y)
+        metrics, metrics_info = metrics_service.compare_with_engine(x, y)
         before = _analysis(x, fs, req.analysis)
         after = _analysis(y, fs, req.analysis)
+    except engine_adapter.EngineError as e:
+        raise HTTPException(503, str(e))
     except (flt.FilterError, ValueError) as e:
         raise HTTPException(422, str(e))
     resp = r["response"]
@@ -193,7 +203,7 @@ def filter_audio(audio_id: str, req: FilterReq):
                             "config": r["config"], "metrics": metrics, "warnings": r["warnings"],
                             "wav": audio_io.encode_wav(y, fs, "float32")[0], "x": x,
                             "wav_pcm16": audio_io.encode_wav(y, fs, "pcm16"), "before": before["spectrum"], "after": after["spectrum"]})
-    return {"job_id": job, "processing_s": time.perf_counter() - t_start, "config": r["config"], "warnings": r["warnings"], "metrics": metrics,
+    return {"job_id": job, "processing_s": time.perf_counter() - t_start, "config": r["config"], "warnings": r["warnings"], "metrics": metrics, "metrics_engine_info": metrics_info,
             "response": {"freqs_hz": resp["freqs_hz"][sub].tolist(), "magnitude_db": resp["magnitude_db"][sub].tolist(),
                          "effective": resp["effective"]},
             "waveform_original": _wave_payload(x, fs), "waveform_filtered": _wave_payload(y, fs),
@@ -206,6 +216,32 @@ class VoiceReq(BaseModel):
     preset: str | None = "speech_clarity"
     overrides: dict = {}
     analysis: AnalyzeReq = AnalyzeReq()
+
+
+@router.get("/clearvoice/{audio_id}/engine-verification")
+def engine_verification_report(audio_id: str, channel: int = 0):
+    """Runs spectrum, statistics, filter design and comparison through the configured engine AND Python on THIS
+    recording and reports max |difference| vs tolerance. If MATLAB did not run, comparison_performed is false."""
+    a = _audio(audio_id)
+    if not 0 <= channel < a["x"].shape[0]:
+        raise HTTPException(422, "channel index out of range")
+    try:
+        return engine_verification.verify_engines(a["x"][channel:channel + 1], a["fs"])
+    except engine_adapter.EngineError as e:
+        raise HTTPException(503, str(e))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+_siren_model = siren_model.SirenModelService()
+
+
+@router.get("/roadsonic/model-status")
+def roadsonic_model_status():
+    """Readiness of the optional YAMNet+MLP scorer. It is NOT used by /roadsonic detection yet; the rule-based detector is
+    the only detector wired into the API. `ready=false` always carries the reason."""
+    return {**_siren_model.status(), "used_by_detection_endpoint": False,
+            "note": "Frame/window scoring is implemented in app/services/siren_model.py but not yet validated on real recordings."}
 
 
 @router.get("/clearvoice/presets")
@@ -222,8 +258,10 @@ def voice(audio_id: str, req: VoiceReq):
     try:
         r = vc.run_voice_pipeline(x, fs, req.preset, req.overrides)
         y = r["output"]
-        metrics = cmp.compare_signals(x, y)
+        metrics, metrics_info = metrics_service.compare_with_engine(x, y)
         before = _analysis(x, fs, req.analysis); after = _analysis(y, fs, req.analysis)
+    except engine_adapter.EngineError as e:
+        raise HTTPException(503, str(e))
     except ValueError as e:                                   # includes FilterError
         raise HTTPException(422, str(e))
     cfg = {"pipeline": "voice", "preset": r["preset"], "stages": r["config"], "sample_rate": float(fs), "engine": r["engine"]}
@@ -232,7 +270,7 @@ def voice(audio_id: str, req: VoiceReq):
                             "wav": audio_io.encode_wav(y, fs, "float32")[0], "wav_pcm16": audio_io.encode_wav(y, fs, "pcm16"),
                             "before": before["spectrum"], "after": after["spectrum"]})
     return {"job_id": job, "processing_s": time.perf_counter() - t_start, "config": cfg, "history": r["history"], "quality": r["quality"], "warnings": r["warnings"],
-            "metrics": metrics, "bypass_note": "Compare against the original with the A/B players; the original is never modified.",
+            "metrics": metrics, "metrics_engine_info": metrics_info, "bypass_note": "Compare against the original with the A/B players; the original is never modified.",
             "waveform_original": _wave_payload(x, fs), "waveform_filtered": _wave_payload(y, fs),
             "spectrum_original": before["spectrum"], "spectrum_filtered": after["spectrum"],
             "spectrogram_original": before["spectrogram"], "spectrogram_filtered": after["spectrogram"],

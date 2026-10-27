@@ -9,5 +9,44 @@
   "variance_population": 0.2249999999999988,
   "peak_abs": 0.8999999999999999,
   "mse_vs_half_gain": 0.0562499999999997,
-  "tolerance": 1e-09
+  "tolerance": 1e-09,
+  "filter_reference": [
+    {
+      "type": "low",
+      "order": 4,
+      "cutoff_hz": [
+        1000.0
+      ],
+      "freqs_hz": [
+        500.0,
+        1000.0,
+        2000.0
+      ],
+      "magnitude": [
+        0.9981982797158747,
+        0.707106781186548,
+        0.053105149018200445
+      ]
+    },
+    {
+      "type": "bandpass",
+      "order": 4,
+      "cutoff_hz": [
+        500.0,
+        1500.0
+      ],
+      "freqs_hz": [
+        250.0,
+        1000.0,
+        3000.0
+      ],
+      "magnitude": [
+        0.018028695051154325,
+        0.9999948907310648,
+        0.011654999753323148
+      ]
+    }
+  ],
+  "filter_reference_tolerance": 1e-09,
+  "filter_reference_note": "|H| (linear, single pass) from SciPy sosfreqz at the exact listed frequencies; MATLAB evaluates the same biquad cascade."
 }
