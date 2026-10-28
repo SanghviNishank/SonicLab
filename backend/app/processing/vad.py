@@ -19,16 +19,14 @@ from scipy.ndimage import binary_closing, binary_opening, maximum_filter1d
 def frame_signal(x: np.ndarray, L: int, H: int) -> np.ndarray:
     if x.size < L:
         x = np.pad(x, (0, L - x.size))
-    n = 1 + (x.size - L) // H
-    idx = np.arange(n)[:, None] * H + np.arange(L)[None, :]
-    return x[idx]
+    # A strided read-only VIEW of the frames (no index matrix, no copy): callers process it in chunks.
+    return np.lib.stride_tricks.sliding_window_view(x, L)[::H]
 
 
 def pitch_features(x: np.ndarray, fs: float, frame_ms: float = 48.0, hop_ms: float = 16.0,
                    fmin: float = 70.0, fmax: float = 400.0) -> dict:
     L, H = int(round(frame_ms * fs / 1000)), int(round(hop_ms * fs / 1000))
     fr = frame_signal(np.asarray(x, dtype=np.float64), L, H)
-    fr = fr - fr.mean(axis=1, keepdims=True)
     w = np.hanning(L)
     n_fft = 1 << int(np.ceil(np.log2(2 * L)))
     out_per, out_f0, out_db = [], [], []
@@ -36,6 +34,7 @@ def pitch_features(x: np.ndarray, fs: float, frame_ms: float = 48.0, hop_ms: flo
     chunk = max(1, 4_000_000 // n_fft)
     for s in range(0, fr.shape[0], chunk):
         seg = fr[s:s + chunk]
+        seg = seg - seg.mean(axis=1, keepdims=True)                    # per-frame DC removal, chunk by chunk
         ms = np.mean(seg ** 2, axis=1)
         sp = np.abs(np.fft.rfft(seg * w, n=n_fft, axis=1)) ** 2
         r = np.fft.irfft(sp, axis=1)[:, : hi + 1]

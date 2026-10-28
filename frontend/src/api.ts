@@ -1,5 +1,8 @@
+import { formatDetail } from "./logic/format.ts";
+export { formatDetail };
 const BASE = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000";
 export const url = (p: string) => BASE + p;
+
 
 export async function call<T = any>(path: string, init?: RequestInit): Promise<T> {
   let r: Response;
@@ -7,7 +10,7 @@ export async function call<T = any>(path: string, init?: RequestInit): Promise<T
   catch { throw new Error("Cannot reach the backend. Is it running on " + BASE + "?"); }
   if (!r.ok) {
     let msg = r.statusText;
-    try { const j = await r.json(); msg = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail); } catch {}
+    try { const j = await r.json(); msg = formatDetail(j.detail, r.statusText); } catch {}
     throw new Error(msg);
   }
   return r.json();
@@ -30,7 +33,7 @@ export function uploadWithProgress(file: File, onProgress: (pct: number) => void
     xhr.onload = () => {
       let body: any = null; try { body = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
       if (xhr.status >= 200 && xhr.status < 300 && body) { onProgress(100); resolve(body); }
-      else reject(new Error(body?.detail ? (typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail)) : `Upload failed (HTTP ${xhr.status}).`));
+      else reject(new Error(body?.detail ? formatDetail(body.detail) : `Upload failed (HTTP ${xhr.status}).`));
     };
     xhr.onerror = () => reject(new Error("Cannot reach the backend. Is it running on " + url("") + "?"));
     xhr.onabort = () => reject(new Error("Upload cancelled."));

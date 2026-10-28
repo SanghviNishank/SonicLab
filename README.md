@@ -8,7 +8,7 @@
 [![React 18](https://img.shields.io/badge/React-18.3-61DAFB.svg?logo=react&logoColor=black)](#frontend-architecture--design-system)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6.svg?logo=typescript&logoColor=white)](#frontend-architecture--design-system)
 [![Vite](https://img.shields.io/badge/Vite-5.4-646CFF.svg?logo=vite&logoColor=white)](#frontend-architecture--design-system)
-[![Tests Passing](https://img.shields.io/badge/Tests-98%20Passed%20%7C%20100%25%20Core-brightgreen.svg)](#test-suite--validation)
+[![Tests Passing](https://img.shields.io/badge/Tests-322%20backend%20%7C%2010%20frontend%20logic-brightgreen.svg)](#test-suite--validation)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#license)
 
 ---
@@ -430,6 +430,9 @@ Configure backend behavior via environment variables:
 | `CS_MAX_DURATION_S`| `300` | Maximum permissible audio duration in seconds. |
 | `CS_MAX_SAMPLES` | `14400000` | Hard cap on total decoded samples ($300\text{ s} \times 48000\text{ Hz}$). |
 | `CS_TTL_S` | `3600` | In-memory session item time-to-live before eviction (seconds). |
+| `CS_MAX_STORE_MB` | `1024` | Memory budget of the in-memory store (uploads + results); least-recently-used items are evicted beyond it. |
+| `CS_MAX_CONCURRENT` | `2` | Heavy requests (decode/analysis/filter/voice/detect/report) processed at once. Use `1` on small machines. |
+| `CS_QUEUE_TIMEOUT_S` | `30` | How long a request waits for a free slot before HTTP 503 + `Retry-After`. |
 | `CS_CORS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-delimited permitted CORS origins. |
 | `CS_ENGINE` | `python` | Numerical engine choice: `python` or `matlab`. |
 | `CS_ENGINE_FALLBACK` | `none` | Fallback behavior if MATLAB fails: `none` (raise HTTP 503) or `python`. |

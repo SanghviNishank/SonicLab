@@ -13,8 +13,10 @@ from __future__ import annotations
 from copy import deepcopy
 import numpy as np
 from scipy import signal
+from scipy.ndimage import uniform_filter1d
+from scipy.signal import lfilter
 from . import filters as flt
-from . import enhance as enh, vad as vadmod
+from . import enhance as enh, vad as vadmod, stft_lean
 
 MAX_FRAME = 8192
 
@@ -52,8 +54,9 @@ def spectral_gate(x: np.ndarray, fs: float, strength: float = 0.6, max_reduction
     if x.size < 2 * L:
         raise ValueError(f"recording too short for noise reduction (need >= {2 * L} samples)")
     hop = L // 4
-    f, t, Z = signal.stft(x, fs=fs, window="hann", nperseg=L, noverlap=L - hop, boundary="zeros", padded=True)
-    P = np.abs(Z) ** 2
+    t, Z = stft_lean.stft(x, fs, L, hop)                     # same numbers as scipy.signal.stft, chunked (bit-identical, tested)
+    P = np.abs(Z)
+    np.square(P, out=P)                                     # |Z|^2 in place
     warn = []
     if noise_segment_s is not None:
         a, b = noise_segment_s
@@ -72,16 +75,25 @@ def spectral_gate(x: np.ndarray, fs: float, strength: float = 0.6, max_reduction
                 "noise_source": source, "mean_gain_db": 0.0}
     alpha = 1.0 + 2.0 * strength
     gmin = 10 ** (-max_reduction_db / 20)
-    G = np.sqrt(np.maximum(1.0 - alpha * noise[:, None] / np.maximum(P, 1e-30), gmin ** 2))
+    G = np.maximum(P, 1e-30)                                # G = sqrt(max(1 - alpha*N/P, gmin^2)), computed in place on one array
+    del P
+    np.divide(alpha * noise[:, None], G, out=G)
+    np.subtract(1.0, G, out=G)
+    np.maximum(G, gmin ** 2, out=G)
+    np.sqrt(G, out=G)
     if smooth_freq_bins > 1:
-        k = np.ones(smooth_freq_bins) / smooth_freq_bins
-        G = np.apply_along_axis(lambda r: np.convolve(r, k, mode="same"), 0, G)
+        if smooth_freq_bins % 2 == 1:                       # centred moving average with zero padding == np.convolve(r, ones/k, "same")
+            G = uniform_filter1d(G, size=smooth_freq_bins, axis=0, mode="constant", cval=0.0)
+        else:
+            k = np.ones(smooth_freq_bins) / smooth_freq_bins
+            G = np.apply_along_axis(lambda r: np.convolve(r, k, mode="same"), 0, G)
     if 0 < smooth_time < 1:
-        g = G.copy()
-        for j in range(1, g.shape[1]):                         # one-pole smoothing, slow release
-            g[:, j] = smooth_time * g[:, j - 1] + (1 - smooth_time) * G[:, j]
-        G = np.maximum(g, gmin)
-    _, y = signal.istft(Z * G, fs=fs, window="hann", nperseg=L, noverlap=L - hop, boundary=True)
+        # one-pole smoothing g[j] = a*g[j-1] + (1-a)*G[j], g[0] = G[0] (slow release); lfilter with zi = a*G[0] reproduces it exactly
+        G = lfilter([1.0 - smooth_time], [1.0, -smooth_time], G, axis=1, zi=smooth_time * G[:, :1])[0]
+        np.maximum(G, gmin, out=G)
+    Z *= G
+    y = stft_lean.istft(Z, L, hop)
+    del Z
     y = y[: x.size]
     if y.size < x.size: y = np.pad(y, (0, x.size - y.size))
     return {"y": y, "bypassed": False, "warnings": warn, "noise_source": source, "noise_gap_db": gap,

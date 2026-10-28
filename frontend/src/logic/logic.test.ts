@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { formatBytes, formatHz, formatTime } from "./format.ts";
+import { formatBytes, formatDetail, formatHz, formatTime } from "./format.ts";
 import { cutoffsFor, validateFilter } from "./filterValidation.ts";
 import { CLEARVOICE_STEPS, ROADSONIC_STEPS, blockedReason, nextStep, prevStep, redirectFor, stepStatus, type Snapshot } from "./workflow.ts";
 import { applyPreset, buildSettings, editDetector, toRequest, validate } from "./roadsonicSettings.ts";
@@ -123,4 +123,11 @@ test("demo signal generators are numerically correct", () => {
   assert.ok(Math.abs(db[0]) < 1e-12); assert.ok(Math.abs(db[1] + 3.0103) < 1e-3); assert.ok(db[2] < -24);
   const g = demoSpectrogram(demoChirp(0.5).y, DEMO_FS, 256, 128);
   assert.equal(g.z.length, g.f.length); assert.equal(g.z[0].length, g.t.length); assert.equal(g.f[g.f.length - 1], DEMO_FS / 2); assert.ok(Math.abs(g.t[0] - 128 / DEMO_FS) < 1e-12);
+});
+
+test("formatDetail turns FastAPI validation lists into readable text", async () => {
+  assert.equal(formatDetail("plain message"), "plain message");
+  assert.equal(formatDetail([{ loc: ["body", "overrides", "rumble", "cutoff_hz"], msg: "Input should be a valid number" }]),
+    "overrides.rumble.cutoff_hz: Input should be a valid number");
+  assert.equal(formatDetail(undefined, "fallback"), "fallback");
 });

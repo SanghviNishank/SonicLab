@@ -172,6 +172,12 @@ def _dispatch(operation: str, py_fn: Callable, matlab_fn: Callable, runner: Matl
 # ------------------------------------------------------------------ public operations
 def spectrum_info(x, fs, window="hann", n_fft=None, runner: MatlabRunner | None = None):
     x = np.asarray(x, dtype=float)
+    if x.size > fa.MAX_NFFT and configured()[0] != "python":
+        # The MATLAB function computes one whole-record FFT only. Python computes the segment-averaged spectrum; say so.
+        info = {"operation": "spectrum", "configured_engine": configured()[0], "engine_used": "python", "fallback_used": True,
+                "fallback_reason": f"record longer than {fa.MAX_NFFT} samples: segment-averaged spectrum is computed in Python "
+                                   "(MATLAB path supports whole-record FFT only)"}
+        return fa.single_sided_spectrum(x, fs, window, n_fft), info
     return _dispatch("spectrum", lambda: fa.single_sided_spectrum(x, fs, window, n_fft),
                      lambda r: r.spectrum(x, fs, window, n_fft), runner)
 

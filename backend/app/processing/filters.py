@@ -64,17 +64,21 @@ def min_samples_zero_phase(sos: np.ndarray) -> int:
 
 
 def apply_filter(x: np.ndarray, sos: np.ndarray, method: str) -> np.ndarray:
-    """x: (channels, samples). Each channel is filtered independently."""
+    """x: (channels, samples). Each channel is filtered independently, one at a time (identical result to filtering the
+    whole array along the last axis, but peak memory is one channel's temporaries instead of all channels')."""
     x = np.asarray(x, dtype=np.float64)
     if x.ndim == 1:
         x = x[None, :]
-    if method == "causal":
-        return signal.sosfilt(sos, x, axis=-1)
-    need = min_samples_zero_phase(sos)
-    if x.shape[-1] < need:
-        raise FilterError(f"recording too short for zero-phase filtering ({x.shape[-1]} < {need} samples); "
-                          "use the causal method or a lower order")
-    return signal.sosfiltfilt(sos, x, axis=-1)
+    if method != "causal":
+        need = min_samples_zero_phase(sos)
+        if x.shape[-1] < need:
+            raise FilterError(f"recording too short for zero-phase filtering ({x.shape[-1]} < {need} samples); "
+                              "use the causal method or a lower order")
+    fn = signal.sosfilt if method == "causal" else signal.sosfiltfilt
+    out = np.empty_like(x)
+    for i in range(x.shape[0]):
+        out[i] = fn(sos, x[i])
+    return out
 
 
 def frequency_response(sos: np.ndarray, fs: float, method: str, n_points: int = 2048) -> dict:

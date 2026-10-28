@@ -12,18 +12,22 @@ from __future__ import annotations
 import numpy as np
 from scipy import signal
 from scipy.ndimage import minimum_filter1d, uniform_filter1d, gaussian_filter1d
+from scipy.signal import lfilter
+from . import stft_lean
 
 
 def track_noise_psd(P: np.ndarray, hop_s: float, window_s: float = 1.5, smooth: float = 0.85, bias: float = 1.3) -> np.ndarray:
     """P: (bins, frames) power. Smooth over time, then take the running minimum over `window_s`; `bias` compensates
     the known downward bias of minimum statistics
     (measured on synthetic white noise: bias=1 gives ~0.5x the true level, bias=1.3 about 0.7x; with speech pauses ~1.1x). Returns (bins, frames) noise PSD estimate."""
-    Ps = np.empty_like(P)
-    Ps[:, 0] = P[:, 0]
-    for j in range(1, P.shape[1]):
-        Ps[:, j] = smooth * Ps[:, j - 1] + (1 - smooth) * P[:, j]
+    # One-pole smoother Ps[j] = smooth*Ps[j-1] + (1-smooth)*P[j] with Ps[0] = P[0]; lfilter with zi = smooth*P[0] gives exactly that
+    # (y0 = (1-smooth)*P0 + smooth*P0 = P0) without a Python loop over frames.
+    Ps = lfilter([1.0 - smooth], [1.0, -smooth], P, axis=1, zi=smooth * P[:, :1])[0]
     w = max(3, int(round(window_s / hop_s)))
-    return bias * minimum_filter1d(Ps, size=w, axis=1, mode="nearest")
+    m = minimum_filter1d(Ps, size=w, axis=1, mode="nearest")
+    del Ps
+    m *= bias
+    return m
 
 
 def spectral_wiener(x: np.ndarray, fs: float, strength: float = 0.7, max_reduction_db: float = 18.0,
@@ -36,23 +40,29 @@ def spectral_wiener(x: np.ndarray, fs: float, strength: float = 0.7, max_reducti
     if L < 256 or L > 8192 or L & (L - 1): raise ValueError("frame_length must be a power of two in [256, 8192]")
     if x.size < 4 * L: raise ValueError(f"recording too short for noise reduction (need >= {4 * L} samples)")
     hop = L // 4
-    _, t, Z = signal.stft(x, fs=fs, window="hann", nperseg=L, noverlap=L - hop, boundary="zeros", padded=True)
-    P = np.abs(Z) ** 2
-    N = (1.0 + 0.5 * strength) * track_noise_psd(P, hop / fs, window_s)
-    N = np.maximum(N, 1e-20)
+    t, Z = stft_lean.stft(x, fs, L, hop)                     # same numbers as scipy.signal.stft, chunked (bit-identical, tested)
+    P = np.abs(Z)
+    np.square(P, out=P)                                     # |Z|^2 in place (no second full-size temporary)
+    N = track_noise_psd(P, hop / fs, window_s)
+    N *= (1.0 + 0.5 * strength)
+    np.maximum(N, 1e-20, out=N)
     gmin = 10 ** (-max_reduction_db / 20)
-    G = np.empty_like(P)
     gamma = P / N                                           # a-posteriori SNR
+    del P, N                                                # free the full-size arrays that are no longer needed
+    G = np.empty_like(gamma)
     xi_prev = np.maximum(gamma[:, 0] - 1, 0)
-    g_prev = np.ones(P.shape[0])
-    for j in range(P.shape[1]):
+    g_prev = np.ones(gamma.shape[0])
+    for j in range(gamma.shape[1]):
         xi = alpha_dd * (g_prev ** 2) * (gamma[:, max(j - 1, 0)] if j else gamma[:, 0]) + (1 - alpha_dd) * np.maximum(gamma[:, j] - 1, 0)
         xi = np.maximum(xi, 10 ** (-25 / 10))
         g = np.maximum(np.sqrt(xi / (1 + xi)), gmin)      # square-root Wiener gain: less speech distortion than plain Wiener (measured)
         G[:, j] = g; g_prev = g
+    del gamma
     G = gaussian_filter1d(G, 0.5, axis=0)                   # very light smoothing across frequency (sigma 1.0 cost ~1 dB SNR in tests)
-    G = np.maximum(G, gmin)
-    _, y = signal.istft(Z * G, fs=fs, window="hann", nperseg=L, noverlap=L - hop, boundary=True)
+    np.maximum(G, gmin, out=G)
+    Z *= G                                                  # in place: Z is not needed unmodified any more
+    y = stft_lean.istft(Z, L, hop)
+    del Z
     y = y[: x.size]
     if y.size < x.size: y = np.pad(y, (0, x.size - y.size))
     return {"y": y, "mean_gain_db": float(20 * np.log10(np.mean(G) + 1e-12)), "gain_floor_db": -max_reduction_db,

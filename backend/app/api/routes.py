@@ -1,16 +1,19 @@
 from __future__ import annotations
-import csv, io, json, logging, time
+import csv, io, json, logging, time, uuid
 import numpy as np
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
+from app.core.limits import heavy_slot, limited
 from app.processing import audio_io, statistics as st, fft_analysis as fa, spectrogram as sg
 from app.processing import filters as flt, comparison as cmp, voice as vc
 from app.matlab import engine_adapter
 from app.services import store, reports, report_builders as rb, roadsonic as rsvc, metrics_service, engine_verification, siren_model
 from app.schemas.roadsonic import DetectReq, EvaluateReq
+from app.schemas.voice import VoiceOverrides
 from app.processing import enhance as enh
 from app.processing.siren_detector import evaluate_events
 
@@ -49,20 +52,26 @@ def _downsample_spec(freqs, amp, max_points=6000):
 @router.get("/health")
 def health():
     return {"status": "ok", "audio_io": audio_io.capabilities(), "engine": "python-scipy", "matlab": engine_adapter.status(),
-            "limits": {"max_file_mb": settings.max_file_bytes // 2**20, "max_duration_s": settings.max_duration_s}}
+            "limits": {"max_file_mb": settings.max_file_bytes // 2**20, "max_duration_s": settings.max_duration_s,
+                                       "max_concurrent_jobs": settings.max_concurrent, "store_budget_mb": settings.max_store_bytes // 2**20},
+            "store": store.stats()}
 
 
 @router.post("/audio/upload")
 async def upload(file: UploadFile = File(...)):
     data = await file.read(settings.max_file_bytes + 1)
     try:
-        dec = audio_io.decode_audio(data)
+        # CPU-bound decode (and the FFmpeg subprocess, up to 120 s) must not run on the event loop: it would stall every other request.
+        dec = await run_in_threadpool(limited(audio_io.decode_audio), data)
     except audio_io.AudioError as e:
-        logger.warning("Audio upload rejected for '%s': %s", file.filename, e)
+        logger.warning("Audio upload rejected for %r: %s", (file.filename or "")[:80], e)       # %r: no log injection via newlines
         raise HTTPException(422, str(e))
-    except Exception as e:
-        logger.error("Audio upload failed unexpectedly for '%s': %s", file.filename, e, exc_info=True)
-        raise HTTPException(500, f"Error processing audio upload: {e}")
+    except HTTPException:
+        raise                                                                                   # e.g. 503 from the concurrency gate
+    except Exception:
+        err = uuid.uuid4().hex[:8]
+        logger.error("Audio upload failed unexpectedly (error id %s) for %r", err, (file.filename or "")[:80], exc_info=True)
+        raise HTTPException(500, f"The audio could not be processed (error id {err}). See the server log.")      # no exception text to the client
     x, fs = dec["samples"], dec["sample_rate"]
     audio_id = store.put("audio", {"x": x, "fs": fs, "wav": data, "subtype": dec["subtype"], "source_format": dec["source_format"],
                                 "name": (file.filename or "unnamed")[:120]})
@@ -120,7 +129,8 @@ def _analysis(x2, fs, req: AnalyzeReq) -> dict:
     out = {"channel": req.channel, "engine": spec_engine, "engine_info": spec_info,
            "spectrum": {"freqs_hz": f.tolist(), "amplitude": a.tolist(), "window": sp["window"], "n_fft": sp["n_fft"],
                         "bin_spacing_hz": sp["bin_spacing_hz"], "nominal_resolution_hz": sp["nominal_resolution_hz"],
-                        "amplitude_unit": sp["amplitude_unit"],
+                        "amplitude_unit": sp["amplitude_unit"], "method": sp.get("method", "full_record"),
+                        "n_segments": sp.get("n_segments", 1), "method_note": sp.get("method_note"),
                         "peaks": fa.find_spectral_peaks(sp["freqs_hz"], sp["amplitude"])}}
     if req.compare_windows:
         other = "rect" if req.window == "hann" else "hann"
@@ -136,7 +146,7 @@ def _analysis(x2, fs, req: AnalyzeReq) -> dict:
     return out
 
 
-@router.post("/clearvoice/{audio_id}/analyze")
+@router.post("/clearvoice/{audio_id}/analyze", dependencies=[Depends(heavy_slot)])
 def analyze(audio_id: str, req: AnalyzeReq):
     a = _audio(audio_id)
     try:
@@ -149,15 +159,15 @@ def analyze(audio_id: str, req: AnalyzeReq):
 
 class FilterReq(BaseModel):
     filter_type: str
-    order: int = 4
-    cutoff_hz: list[float]
+    order: int = Field(4, ge=flt.MIN_ORDER, le=flt.MAX_ORDER, strict=True)       # strict: JSON true/false is not an order
+    cutoff_hz: list[float] = Field(max_length=2)
     method: str = "zero_phase"
     analysis: AnalyzeReq = AnalyzeReq()
 
 
 class FilterPreviewReq(BaseModel):
     filter_type: str
-    order: int = 4
+    order: int = Field(4, ge=flt.MIN_ORDER, le=flt.MAX_ORDER, strict=True)
     cutoff_hz: list[float] = Field(max_length=2)
     method: str = "zero_phase"
 
@@ -182,7 +192,7 @@ def filter_preview(audio_id: str, req: FilterPreviewReq):
             "engine_info": design_info}
 
 
-@router.post("/clearvoice/{audio_id}/filter")
+@router.post("/clearvoice/{audio_id}/filter", dependencies=[Depends(heavy_slot)])
 def filter_audio(audio_id: str, req: FilterReq):
     a = _audio(audio_id)
     x, fs = a["x"], a["fs"]
@@ -199,10 +209,9 @@ def filter_audio(audio_id: str, req: FilterReq):
         raise HTTPException(422, str(e))
     resp = r["response"]
     sub = np.unique(np.linspace(0, resp["freqs_hz"].size - 1, 600).astype(int))
-    job = store.put("job", {"y": y, "fs": fs, "meta": a["meta"], "name": a["name"], "created": time.time(), "audio_id": audio_id,
-                            "config": r["config"], "metrics": metrics, "warnings": r["warnings"],
-                            "wav": audio_io.encode_wav(y, fs, "float32")[0], "x": x,
-                            "wav_pcm16": audio_io.encode_wav(y, fs, "pcm16"), "before": before["spectrum"], "after": after["spectrum"]})
+    job = store.put("job", {"y": y.astype(np.float32), "fs": fs, "meta": a["meta"], "name": a["name"], "created": time.time(), "audio_id": audio_id,
+                            "config": r["config"], "metrics": metrics, "warnings": r["warnings"], "x": x,
+                            "before": before["spectrum"], "after": after["spectrum"]})
     return {"job_id": job, "processing_s": time.perf_counter() - t_start, "config": r["config"], "warnings": r["warnings"], "metrics": metrics, "metrics_engine_info": metrics_info,
             "response": {"freqs_hz": resp["freqs_hz"][sub].tolist(), "magnitude_db": resp["magnitude_db"][sub].tolist(),
                          "effective": resp["effective"]},
@@ -214,7 +223,7 @@ def filter_audio(audio_id: str, req: FilterReq):
 
 class VoiceReq(BaseModel):
     preset: str | None = "speech_clarity"
-    overrides: dict = {}
+    overrides: VoiceOverrides = VoiceOverrides()
     analysis: AnalyzeReq = AnalyzeReq()
 
 
@@ -250,13 +259,13 @@ def presets():
             "notes": "A filter is not a denoiser. Presets are fixed parameter sets, not guarantees; quality is not verified for natural speech."}
 
 
-@router.post("/clearvoice/{audio_id}/voice")
+@router.post("/clearvoice/{audio_id}/voice", dependencies=[Depends(heavy_slot)])
 def voice(audio_id: str, req: VoiceReq):
     a = _audio(audio_id)
     x, fs = a["x"], a["fs"]
     t_start = time.perf_counter()
     try:
-        r = vc.run_voice_pipeline(x, fs, req.preset, req.overrides)
+        r = vc.run_voice_pipeline(x, fs, req.preset, req.overrides.to_pipeline_dict())
         y = r["output"]
         metrics, metrics_info = metrics_service.compare_with_engine(x, y)
         before = _analysis(x, fs, req.analysis); after = _analysis(y, fs, req.analysis)
@@ -265,9 +274,8 @@ def voice(audio_id: str, req: VoiceReq):
     except ValueError as e:                                   # includes FilterError
         raise HTTPException(422, str(e))
     cfg = {"pipeline": "voice", "preset": r["preset"], "stages": r["config"], "sample_rate": float(fs), "engine": r["engine"]}
-    job = store.put("job", {"y": y, "x": x, "fs": fs, "meta": a["meta"], "name": a["name"], "created": time.time(), "audio_id": audio_id, "config": cfg, "metrics": metrics, "warnings": r["warnings"],
+    job = store.put("job", {"y": y.astype(np.float32), "x": x, "fs": fs, "meta": a["meta"], "name": a["name"], "created": time.time(), "audio_id": audio_id, "config": cfg, "metrics": metrics, "warnings": r["warnings"],
                             "history": r["history"], "quality": r["quality"],
-                            "wav": audio_io.encode_wav(y, fs, "float32")[0], "wav_pcm16": audio_io.encode_wav(y, fs, "pcm16"),
                             "before": before["spectrum"], "after": after["spectrum"]})
     return {"job_id": job, "processing_s": time.perf_counter() - t_start, "config": cfg, "history": r["history"], "quality": r["quality"], "warnings": r["warnings"],
             "metrics": metrics, "metrics_engine_info": metrics_info, "bypass_note": "Compare against the original with the A/B players; the original is never modified.",
@@ -287,9 +295,11 @@ def _job(job_id: str) -> dict:
 @router.get("/clearvoice/{job_id}/download")
 def download(job_id: str, subtype: str = "float32"):
     j = _job(job_id)
-    if subtype == "float32": body = j["wav"]
+    if "y" not in j:
+        raise HTTPException(404, "this job has no processed audio to download")
+    if subtype == "float32": body, _ = audio_io.encode_wav(j["y"], j["fs"], "float32")    # encoded on demand: the job stores the signal once
     elif subtype == "pcm16":
-        body, info = j["wav_pcm16"]
+        body, info = audio_io.encode_wav(j["y"], j["fs"], "pcm16")
         if info["clipped_samples"]:
             raise HTTPException(409, f"PCM16 export would clip {info['clipped_samples']} samples; download float32 instead")
     else: raise HTTPException(422, "subtype must be float32 or pcm16")
@@ -297,7 +307,7 @@ def download(job_id: str, subtype: str = "float32"):
                     headers={"Content-Disposition": 'attachment; filename="clearvoice_filtered.wav"'})
 
 
-@router.get("/clearvoice/{job_id}/export")
+@router.get("/clearvoice/{job_id}/export", dependencies=[Depends(heavy_slot)])
 def export(job_id: str, kind: str = "metadata", channel: int = 0, frame_length: int = 1024, hop_length: int = 512):
     j = _job(job_id)
     if kind == "metadata":
@@ -357,7 +367,7 @@ def _version_payload(mono, fs, feat, events):
             "total_event_s": float(sum(e["duration_s"] for e in events))}
 
 
-@router.post("/roadsonic/{audio_id}/detect")
+@router.post("/roadsonic/{audio_id}/detect", dependencies=[Depends(heavy_slot)])
 def rs_detect(audio_id: str, req: DetectReq):
     a = _audio(audio_id)
     x, fs = a["x"], a["fs"]
@@ -479,12 +489,12 @@ def _report_response(model_fn, job, fmt: str, base: str):
     raise HTTPException(422, "format must be html or pdf")
 
 
-@router.get("/clearvoice/{job_id}/report")
+@router.get("/clearvoice/{job_id}/report", dependencies=[Depends(heavy_slot)])
 def clearvoice_report(job_id: str, format: str = "html"):
     return _report_response(rb.clearvoice_report, _job(job_id), format, "clearvoice_report")
 
 
-@router.get("/roadsonic/{job_id}/report")
+@router.get("/roadsonic/{job_id}/report", dependencies=[Depends(heavy_slot)])
 def roadsonic_report(job_id: str, format: str = "html"):
     return _report_response(rb.roadsonic_report, _rs_job(job_id), format, "roadsonic_report")
 

@@ -72,18 +72,38 @@ def _validate(x: np.ndarray, fs: int) -> None:
         raise AudioError("audio contains NaN or infinite samples")
 
 
+_BLOCK_FRAMES = 1 << 20
+
+
 def _via_soundfile(data: bytes):
-    info = sf.info(io.BytesIO(data))
-    if info.frames > settings.max_samples:       # check BEFORE decoding
-        raise AudioError("recording exceeds the sample limit")
-    x, fs = sf.read(io.BytesIO(data), dtype="float64", always_2d=True)
+    """Decode block by block straight into the final (channels, samples) float64 array.
+    The previous version read a (samples, channels) array and then made a transposed COPY, holding two full-size arrays at once."""
+    with sf.SoundFile(io.BytesIO(data)) as f:
+        frames, ch, fs, fmt, sub = int(f.frames), int(f.channels), int(f.samplerate), f.format, f.subtype
+        if frames > settings.max_samples:       # check BEFORE decoding
+            raise AudioError("recording exceeds the sample limit")
+        if ch > settings.max_channels:          # ... and before allocating anything proportional to the channel count
+            raise AudioError(f"{ch} channels found; at most {settings.max_channels} are supported")
+        out = np.empty((ch, max(frames, 0)), dtype=np.float64)
+        pos = 0
+        while True:
+            blk = f.read(frames=_BLOCK_FRAMES, dtype="float64", always_2d=True)
+            if blk.shape[0] == 0:
+                break
+            if pos + blk.shape[0] > out.shape[1]:           # lossy formats can declare an estimate: grow when the estimate was low
+                out = np.concatenate([out, np.empty((ch, max(blk.shape[0], _BLOCK_FRAMES)))], axis=1)
+            out[:, pos:pos + blk.shape[0]] = blk.T
+            pos += blk.shape[0]
+            if pos > settings.max_samples:
+                raise AudioError("recording exceeds the sample limit")
+    x = out if pos == out.shape[1] else out[:, :pos].copy()
     # Lossless uncompressed formats (WAV, AIFF) have exact frame counts declared in headers.
     # If fewer samples than declared are read, the file was truncated during transmission.
-    # Note: For lossy / container formats (MP3, OGG), libsndfile estimates info.frames from file size,
+    # Note: For lossy / container formats (MP3, OGG), libsndfile estimates the frame count from file size,
     # which differs when ID3 tags, album art (GEOB), or variable bitrate headers are present.
-    if info.format in ("WAV", "AIFF") and info.frames > 0 and x.shape[0] < info.frames:
+    if fmt in ("WAV", "AIFF") and frames > 0 and pos < frames:
         raise AudioError("file is truncated: fewer samples than the header declares")
-    return x.T.copy(), int(fs), f"{info.format}/{info.subtype}"
+    return np.ascontiguousarray(x), fs, f"{fmt}/{sub}"
 
 
 def _via_scipy_wav(data: bytes):

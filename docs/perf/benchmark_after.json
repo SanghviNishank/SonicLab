@@ -1,0 +1,180 @@
+{
+  "environment": {
+    "python": "3.13.17",
+    "platform": "Linux-6.18.44-fc-v180-x86_64-with-glibc2.39",
+    "cpus": 2,
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "fastapi": "0.162.0"
+  },
+  "scenarios": {
+    "10 s mono 16 kHz": {
+      "file_mb": 0.6104278564453125,
+      "ops": {
+        "upload": {
+          "seconds": 0.0815394630000128,
+          "rtf": 0.00815394630000128,
+          "status": 200,
+          "response_mb": 0.11126232147216797,
+          "rss_peak_mb_so_far": 163.765625
+        },
+        "analyze": {
+          "seconds": 0.19121725100001186,
+          "rtf": 0.019121725100001187,
+          "status": 200,
+          "response_mb": 2.755669593811035,
+          "rss_peak_mb_so_far": 196.50390625
+        },
+        "filter_bandpass_zero_phase": {
+          "seconds": 0.4176636840000185,
+          "rtf": 0.04176636840000185,
+          "status": 200,
+          "response_mb": 5.286093711853027,
+          "rss_peak_mb_so_far": 214.96484375
+        },
+        "filter_lowpass_causal": {
+          "seconds": 0.4041510119999998,
+          "rtf": 0.040415101199999984,
+          "status": 200,
+          "response_mb": 5.592209815979004,
+          "rss_peak_mb_so_far": 227.60546875
+        },
+        "voice_lecture_speech": {
+          "seconds": 0.5656485420000195,
+          "rtf": 0.05656485420000194,
+          "status": 200,
+          "response_mb": 5.636410713195801,
+          "rss_peak_mb_so_far": 242.7109375
+        },
+        "roadsonic_detect": {
+          "seconds": 0.13280198999999016,
+          "rtf": 0.013280198999999016,
+          "status": 200,
+          "response_mb": 1.1960830688476562,
+          "rss_peak_mb_so_far": 242.7109375
+        },
+        "download_float32": {
+          "seconds": 0.003720447999995713,
+          "rtf": 0.0003720447999995713,
+          "status": 200,
+          "response_mb": 0.6104068756103516,
+          "rss_peak_mb_so_far": 242.7109375
+        }
+      },
+      "rss_growth_per_extra_filter_job_mb": 1.0078125,
+      "rss_peak_mb_final": 246.59375
+    },
+    "60 s stereo 44.1 kHz": {
+      "file_mb": 20.187461853027344,
+      "ops": {
+        "upload": {
+          "seconds": 0.2390923179999902,
+          "rtf": 0.003984871966666503,
+          "status": 200,
+          "response_mb": 0.2930288314819336,
+          "rss_peak_mb_so_far": 417.1953125
+        },
+        "analyze": {
+          "seconds": 0.5083732020000014,
+          "rtf": 0.008472886700000022,
+          "status": 200,
+          "response_mb": 1.928004264831543,
+          "rss_peak_mb_so_far": 631.16796875
+        },
+        "filter_bandpass_zero_phase": {
+          "seconds": 1.0587311820000025,
+          "rtf": 0.017645519700000042,
+          "status": 200,
+          "response_mb": 3.8174543380737305,
+          "rss_peak_mb_so_far": 649.4921875
+        },
+        "filter_lowpass_causal": {
+          "seconds": 0.982528235999979,
+          "rtf": 0.01637547059999965,
+          "status": 200,
+          "response_mb": 4.167760848999023,
+          "rss_peak_mb_so_far": 670.36328125
+        },
+        "voice_lecture_speech": {
+          "seconds": 3.614557175000016,
+          "rtf": 0.060242619583333594,
+          "status": 200,
+          "response_mb": 4.39005184173584,
+          "rss_peak_mb_so_far": 751.93359375
+        },
+        "roadsonic_detect": {
+          "seconds": 0.5946623609999904,
+          "rtf": 0.00991103934999984,
+          "status": 200,
+          "response_mb": 2.198521614074707,
+          "rss_peak_mb_so_far": 752.31640625
+        },
+        "download_float32": {
+          "seconds": 0.04043196500001045,
+          "rtf": 0.0006738660833335075,
+          "status": 200,
+          "response_mb": 20.18743324279785,
+          "rss_peak_mb_so_far": 752.31640625
+        }
+      },
+      "rss_growth_per_extra_filter_job_mb": 11.98203125,
+      "rss_peak_mb_final": 812.1953125
+    },
+    "277 s stereo 44.1 kHz 16-bit (~49 MB, size limit)": {
+      "file_mb": 46.599239349365234,
+      "ops": {
+        "upload": {
+          "seconds": 0.8850113550000174,
+          "rtf": 0.0031949868411552972,
+          "status": 200,
+          "response_mb": 0.2755393981933594,
+          "rss_peak_mb_so_far": 1004.37109375
+        },
+        "analyze": {
+          "seconds": 1.3929460049999989,
+          "rtf": 0.005028685938628155,
+          "status": 200,
+          "response_mb": 1.8915529251098633,
+          "rss_peak_mb_so_far": 1147.37109375
+        },
+        "filter_bandpass_zero_phase": {
+          "seconds": 4.19562449099999,
+          "rtf": 0.01514665881227433,
+          "status": 200,
+          "response_mb": 3.747799873352051,
+          "rss_peak_mb_so_far": 1426.9609375
+        },
+        "filter_lowpass_causal": {
+          "seconds": 4.103143569999986,
+          "rtf": 0.014812792671480094,
+          "status": 200,
+          "response_mb": 4.086211204528809,
+          "rss_peak_mb_so_far": 1436.65625
+        },
+        "voice_lecture_speech": {
+          "seconds": 16.093410957000003,
+          "rtf": 0.058098956523465715,
+          "status": 200,
+          "response_mb": 4.304876327514648,
+          "rss_peak_mb_so_far": 2461.26953125
+        },
+        "roadsonic_detect": {
+          "seconds": 1.8412386710000135,
+          "rtf": 0.006647071014440482,
+          "status": 200,
+          "response_mb": 2.3254785537719727,
+          "rss_peak_mb_so_far": 2461.26953125
+        },
+        "download_float32": {
+          "seconds": 0.4018617410000047,
+          "rtf": 0.0014507644079422553,
+          "status": 200,
+          "response_mb": 93.19845008850098,
+          "rss_peak_mb_so_far": 2461.26953125
+        }
+      },
+      "rss_growth_per_extra_filter_job_mb": 74.87890625,
+      "rss_peak_mb_final": 2461.26953125
+    }
+  }
+}

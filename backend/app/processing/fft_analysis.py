@@ -11,6 +11,13 @@ A real sinusoid of amplitude A on a bin centre gives |X[k]| = A*sum(w)/2, so
 Normalising by sum(w) (not n_fft) keeps amplitudes correct under zero-padding.
 Zero-padding only interpolates the spectrum; true resolution is set by the
 observed duration (about fs/N_signal times the window main-lobe width).
+
+Long recordings: a single FFT of the whole record is limited to MAX_NFFT samples (about 95 s at 44.1 kHz). Longer
+records are analysed with a SEGMENT-AVERAGED amplitude spectrum: Hann (or rectangular) frames of `segment` samples,
+50 % overlap, the last frame aligned to the end of the record so no sample is dropped, magnitudes averaged with the
+same calibration as above. A stationary sinusoid keeps its true peak amplitude; non-stationary content is averaged
+over time (so its peak is lower than its instantaneous amplitude). The result says which method was used
+(`method`: "full_record" | "segment_averaged") and the frequency resolution becomes fs/segment.
 """
 from __future__ import annotations
 
@@ -18,6 +25,7 @@ import numpy as np
 from scipy.signal import find_peaks, get_window
 
 MAX_NFFT = 2 ** 22
+DEFAULT_SEGMENT = 2 ** 21          # used for records longer than MAX_NFFT when the caller gives no n_fft
 
 
 def make_window(name: str, n: int) -> np.ndarray:
@@ -29,6 +37,29 @@ def make_window(name: str, n: int) -> np.ndarray:
     raise ValueError(f"unsupported window '{name}' (use 'rect' or 'hann')")
 
 
+def _scale_single_sided(amp: np.ndarray, n_fft: int) -> np.ndarray:
+    if n_fft % 2 == 0:
+        amp[..., 1:-1] *= 2.0          # keep DC and Nyquist undoubled
+    else:
+        amp[..., 1:] *= 2.0            # odd length: no Nyquist bin
+    return amp
+
+
+def _segment_averaged(x: np.ndarray, fs: float, window: str, seg: int) -> dict:
+    n = x.size
+    hop = seg // 2
+    starts = list(range(0, n - seg + 1, hop))
+    if starts[-1] + seg < n:
+        starts.append(n - seg)          # final frame aligned to the end: every sample contributes
+    w = make_window(window, seg)
+    sw = float(np.sum(w))
+    acc = np.zeros(seg // 2 + 1)
+    for s0 in starts:                   # one frame at a time keeps peak memory ~ a few frames, not the whole record
+        acc += np.abs(np.fft.rfft(x[s0:s0 + seg] * w))
+    amp = _scale_single_sided(acc / (len(starts) * sw), seg)
+    return {"amp": amp, "n_segments": len(starts), "hop": hop, "w_sum": sw, "seg": seg}
+
+
 def single_sided_spectrum(x: np.ndarray, fs: float, window: str = "hann",
                           n_fft: int | None = None) -> dict:
     x = np.asarray(x, dtype=np.float64)
@@ -37,6 +68,25 @@ def single_sided_spectrum(x: np.ndarray, fs: float, window: str = "hann",
     n = x.size
     if n < 2:
         raise ValueError("need at least 2 samples")
+    if n > MAX_NFFT:
+        # Whole-record FFT is not possible; analyse in averaged segments (documented above). An explicit n_fft is the segment length.
+        seg = int(n_fft) if n_fft is not None else DEFAULT_SEGMENT
+        if seg < 2 or seg > MAX_NFFT:
+            raise ValueError(f"for records longer than {MAX_NFFT} samples n_fft is the segment length and must be within [2, {MAX_NFFT}]")
+        seg = min(seg, n)
+        r = _segment_averaged(x, fs, window, seg)
+        return {
+            "freqs_hz": np.fft.rfftfreq(seg, d=1.0 / fs), "amplitude": r["amp"], "power": r["amp"] ** 2 / 2.0,
+            "window": window, "n_fft": seg, "n_signal": n,
+            "bin_spacing_hz": fs / seg, "nominal_resolution_hz": fs / seg,
+            "nyquist_hz": fs / 2.0, "coherent_gain": r["w_sum"] / seg,
+            "method": "segment_averaged", "n_segments": r["n_segments"], "segment_hop_samples": r["hop"],
+            "method_note": (f"Record ({n} samples) exceeds the single-FFT limit ({MAX_NFFT}); spectrum is the average of "
+                            f"{r['n_segments']} overlapping {window} segments of {seg} samples ({seg / fs:.2f} s). Stationary tones keep their "
+                            "amplitude; content that changes over time is averaged."),
+            "amplitude_unit": "single-sided peak amplitude, full scale = 1.0 (segment-averaged)",
+            "power_unit": "mean-square power of the equivalent sinusoid (amplitude^2/2)",
+        }
     n_fft = n if n_fft is None else int(n_fft)
     if n_fft < n:
         raise ValueError("n_fft must be >= signal length (no silent truncation)")
@@ -44,17 +94,14 @@ def single_sided_spectrum(x: np.ndarray, fs: float, window: str = "hann",
         raise ValueError(f"n_fft exceeds safe maximum {MAX_NFFT}")
     w = make_window(window, n)
     sw = float(np.sum(w))
-    amp = np.abs(np.fft.rfft(x * w, n=n_fft)) / sw
-    if n_fft % 2 == 0:
-        amp[1:-1] *= 2.0          # keep DC and Nyquist undoubled
-    else:
-        amp[1:] *= 2.0            # odd length: no Nyquist bin
+    amp = _scale_single_sided(np.abs(np.fft.rfft(x * w, n=n_fft)) / sw, n_fft)
     freqs = np.fft.rfftfreq(n_fft, d=1.0 / fs)
     return {
         "freqs_hz": freqs, "amplitude": amp, "power": amp ** 2 / 2.0,
         "window": window, "n_fft": n_fft, "n_signal": n,
         "bin_spacing_hz": fs / n_fft, "nominal_resolution_hz": fs / n,
         "nyquist_hz": fs / 2.0, "coherent_gain": sw / n,
+        "method": "full_record", "n_segments": 1,
         "amplitude_unit": "single-sided peak amplitude, full scale = 1.0",
         "power_unit": "mean-square power of the equivalent sinusoid (amplitude^2/2)",
     }

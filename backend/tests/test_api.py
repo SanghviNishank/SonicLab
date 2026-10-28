@@ -88,9 +88,16 @@ def test_spectrogram_csv_has_documented_header_and_shape():
 
 def test_pcm16_download_refused_when_it_would_clip():
     aid = upload(tone(500, FS, 0.5, 0.9)).json()["metadata"]["audio_id"]
-    job = c.post(f"/api/v1/clearvoice/{aid}/voice", json={"preset": "manual", "overrides": {"loudness": {"enabled": True, "target_peak_dbfs": 0.0}}}).json()["job_id"]
+    # The default-on peak_guard (ceiling -0.5 dBFS) was added after this test was written and now prevents the clip, so the
+    # guard is disabled here to exercise the refusal path itself.
+    job = c.post(f"/api/v1/clearvoice/{aid}/voice", json={"preset": "manual", "overrides": {
+        "loudness": {"enabled": True, "target_peak_dbfs": 0.0}, "peak_guard": {"enabled": False}}}).json()["job_id"]
     assert c.get(f"/api/v1/clearvoice/{job}/download?subtype=pcm16").status_code == 409     # peak exactly full scale
     assert c.get(f"/api/v1/clearvoice/{job}/download").status_code == 200                   # float32 is always allowed
+    # With the guard on (default) the same request must be safely exportable as 16-bit.
+    job2 = c.post(f"/api/v1/clearvoice/{aid}/voice", json={"preset": "manual", "overrides": {
+        "loudness": {"enabled": True, "target_peak_dbfs": 0.0}}}).json()["job_id"]
+    assert c.get(f"/api/v1/clearvoice/{job2}/download?subtype=pcm16").status_code == 200
 
 def test_health_reports_audio_capabilities():
     j = c.get("/api/v1/health").json()
@@ -124,7 +131,9 @@ def test_reprocessing_gives_new_job_and_download_matches_latest_settings():
 # ------------------------------------------------------------------ RoadSonic API (needs FastAPI/httpx)
 def _siren_upload(fs=FS, stereo=False):
     x = np.concatenate([np.zeros(fs * 2), siren(fs, 4.0), np.zeros(fs * 2)])
-    return upload(np.column_stack([x, x]) if stereo else x, fs).json()["metadata"]["audio_id"], x
+    # wav_bytes() expects multichannel input shaped (channels, samples); np.column_stack would give (samples, 2),
+    # which the helper transposes into 64000 "channels" (test-helper defect found when running under real pytest).
+    return upload(np.vstack([x, x]) if stereo else x, fs).json()["metadata"]["audio_id"], x
 
 def test_roadsonic_defaults_endpoint_matches_detector():
     j = c.get("/api/v1/roadsonic/defaults").json()
