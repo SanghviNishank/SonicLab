@@ -69,7 +69,7 @@ def put(kind: str, payload: dict, item_id: str | None = None) -> str:
         _purge()
         item_id = item_id or new_id()
         now = time.time()
-        _items[item_id] = {"kind": kind, "t": now, "last": now, "data": payload}
+        _items[item_id] = {"kind": kind, "t": now, "last": time.perf_counter(), "data": payload}
         _evict(keep=item_id)
         return item_id
 
@@ -79,7 +79,7 @@ def get(item_id: str, kind: str) -> dict | None:
         _purge()
         it = _items.get(item_id)
         if it and it["kind"] == kind:
-            it["last"] = time.time()
+            it["last"] = time.perf_counter()
             return it["data"]
         return None
 

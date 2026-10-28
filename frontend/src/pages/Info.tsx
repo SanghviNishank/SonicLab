@@ -1,15 +1,88 @@
 import { Link } from "react-router-dom";
+import { ArrowRight, Cpu, Sliders, Activity, ShieldAlert, Sparkles, Volume2 } from "lucide-react";
 
-export function Info({ kind }: { kind: "how" | "docs" }) {
-  if (kind === "how") return (
-    <div className="page stack"><h1>How It Works</h1>
-      <div className="grid2"><section className="card"><h3>ClearVoice workflow</h3><ol><li>Upload and validate</li><li>Overview of metadata and statistics</li><li>Time-domain analysis</li><li>Frequency-domain analysis (FFT)</li><li>Spectrogram (STFT)</li><li>Filter or voice pipeline</li><li>Original vs processed comparison</li><li>Results and export</li></ol><Link className="btn" to="/clearvoice/upload">Start ClearVoice</Link></section>
-        <section className="card" data-module="roadsonic"><h3>RoadSonic workflow</h3><ol><li>Upload traffic audio</li><li>Overview</li><li>Optional preprocessing</li><li>Feature analysis</li><li>Candidate siren detection</li><li>Event timeline</li><li>Event review</li><li>Summary and evaluation</li></ol><Link className="btn" to="/roadsonic/upload">Start RoadSonic</Link></section></div>
-      <section className="card"><h3>Principles</h3><ul className="muted"><li>The original recording is never modified; every result is computed from it again.</li><li>A step is "completed" only when its real data exists, not when you click Next.</li><li>Filtering is not denoising; spectral noise reduction handles steady noise only.</li><li>RoadSonic reports <i>candidate</i> events from fixed rules; it is not machine learning and not a safety system.</li></ul></section></div>);
+export function Info({ kind = "how" }: { kind?: "how" }) {
   return (
-    <div className="page stack"><h1>Documentation</h1>
-      <section className="card"><p className="muted">Project documents live in the repository's <code>docs/</code> folder. Run the backend and open <code>http://127.0.0.1:8000/docs</code> for the interactive API reference.</p>
-        <div className="table-wrap" tabIndex={0} role="region" aria-label="Scrollable table"><table><thead><tr><th>Document</th><th>Contents</th></tr></thead><tbody>
-          <tr><td>README.md</td><td>Windows setup, run and test commands</td></tr><tr><td>docs/clearvoice.md</td><td>Mathematics, presets, limits, viva questions</td></tr><tr><td>docs/roadsonic.md</td><td>Detector design, benchmark, limits, viva questions</td></tr>
-          <tr><td>docs/sonicsense_frontend.md</td><td>Routes, session model, design tokens, test report</td></tr><tr><td>docs/implementation_status.md</td><td>What is verified, unverified and missing</td></tr></tbody></table></div></section></div>);
+    <div className="page stack">
+      <div className="wf-head">
+        <div>
+          <div className="crumbs"><Link to="/">SignalSystem</Link> / Platform Architecture</div>
+          <h1>How SignalSystem Operates</h1>
+        </div>
+      </div>
+
+      <div className="grid2">
+        <section className="card">
+          <div className="row" style={{ marginBottom: "0.5rem" }}>
+            <Sliders size={20} className="text-cyan" />
+            <h3 style={{ margin: 0 }}>ClearVoice Pipeline</h3>
+          </div>
+          <p className="muted" style={{ fontSize: "0.9rem" }}>
+            Deterministic digital audio signal analysis and high-order IIR Butterworth filtering.
+          </p>
+          <ol style={{ paddingLeft: "1.2rem", lineHeight: 1.8 }}>
+            <li><b>Upload & Validation:</b> Strict header and sample inspection (mono/stereo WAV, AIFF, FLAC).</li>
+            <li><b>Time & Frequency Domain:</b> Calibrated RMS, crest factor, FFT spectrum, and STFT spectrograms.</li>
+            <li><b>Second-Order Section (SOS) Filters:</b> Numerically stable Butterworth filtering (low-pass, high-pass, band-pass, notch) with zero-phase or causal options.</li>
+            <li><b>A/B Evaluation & Export:</b> Aligned sample comparisons, metric calculation (MSE, SNR gain, peak delta), and 32-bit float / 16-bit PCM WAV export.</li>
+          </ol>
+          <Link className="btn" to="/clearvoice/upload" style={{ marginTop: "1rem" }}>
+            Open ClearVoice <ArrowRight size={15} />
+          </Link>
+        </section>
+
+        <section className="card" data-module="roadsonic">
+          <div className="row" style={{ marginBottom: "0.5rem" }}>
+            <Activity size={20} className="text-amber" />
+            <h3 style={{ margin: 0 }}>RoadSonic Detector</h3>
+          </div>
+          <p className="muted" style={{ fontSize: "0.9rem" }}>
+            Rule-based acoustic feature extraction and candidate emergency siren event isolation.
+          </p>
+          <ol style={{ paddingLeft: "1.2rem", lineHeight: 1.8 }}>
+            <li><b>Acoustic Preprocessing:</b> DC offset removal, rumble high-pass, optional adaptive noise suppression.</li>
+            <li><b>Time-Frequency Features:</b> Short-time RMS energy, spectral centroid, spectral bandwidth, dominant frequency tracking, and tonal harmonic ratio.</li>
+            <li><b>Candidate Event Detection:</b> Multi-feature temporal consistency detector targeting classic wail and yelp frequency modulations (500–1800 Hz).</li>
+            <li><b>Inspection & Timeline:</b> Interactive candidate intervals, feature trajectories, contextual audio playback, and CSV/JSON export.</li>
+          </ol>
+          <Link className="btn" to="/roadsonic/upload" style={{ marginTop: "1rem" }}>
+            Open RoadSonic <ArrowRight size={15} />
+          </Link>
+        </section>
+      </div>
+
+      <section className="card stack">
+        <div className="row">
+          <Cpu size={20} className="text-violet" />
+          <h3 style={{ margin: 0 }}>Core Engineering Principles</h3>
+        </div>
+        <div className="grid2 four">
+          <div className="card flat">
+            <b>Non-Destructive Processing</b>
+            <p className="muted" style={{ fontSize: "0.85rem", marginTop: "0.3rem" }}>
+              Original audio buffers are kept immutable in memory. All filters, features, and spectrograms are re-calculated directly from original full-resolution samples.
+            </p>
+          </div>
+          <div className="card flat">
+            <b>No Fabricated Representations</b>
+            <p className="muted" style={{ fontSize: "0.85rem", marginTop: "0.3rem" }}>
+              Every waveform, FFT peak, STFT cell, and detector interval reflects genuine calculations from real samples. Empty states are explicitly shown when audio is absent.
+            </p>
+          </div>
+          <div className="card flat">
+            <b>Filtering vs. Denoising</b>
+            <p className="muted" style={{ fontSize: "0.85rem", marginTop: "0.3rem" }}>
+              Frequency filters attenuate spectral regions based on frequency cutoffs, not semantics. Overlapping speech and noise frequencies require honest spectral gating disclosures.
+            </p>
+          </div>
+          <div className="card flat">
+            <b>Academic Prototype Notice</b>
+            <p className="muted" style={{ fontSize: "0.85rem", marginTop: "0.3rem" }}>
+              RoadSonic generates heuristic candidate events for research analysis and traffic acoustic modeling; it is not a safety-critical certified emergency response device.
+            </p>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
 }

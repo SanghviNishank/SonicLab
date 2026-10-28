@@ -15,12 +15,11 @@ export default function App() {
         <Route element={<AppShell />}>
           <Route index element={<HomePage />} />
           <Route path="how-it-works" element={<Info kind="how" />} />
-          <Route path="docs" element={<Info kind="docs" />} />
           <Route path="clearvoice" element={<Navigate to="/clearvoice/upload" replace />} />
           <Route path="clearvoice/*" element={<ClearVoiceRoutes />} />
           <Route path="roadsonic" element={<Navigate to="/roadsonic/upload" replace />} />
           <Route path="roadsonic/*" element={<RoadSonicRoutes />} />
-          <Route path="*" element={<div className="page"><div className="empty"><h2>Page not found</h2><p className="muted">That address does not exist in SonicSense.</p></div></div>} />
+          <Route path="*" element={<div className="page"><div className="empty"><h2>Page not found</h2><p className="muted">That address does not exist in SignalSystem.</p></div></div>} />
         </Route>
       </Routes>
     </Suspense>

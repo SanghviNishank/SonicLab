@@ -8,6 +8,7 @@ vi.mock("../components/hero/FeaturePreview", () => ({ default: () => <div /> }))
 vi.mock("../components/Plot", () => ({ default: (p: any) => <div data-testid="plot" data-title={p.title}>{p.summary && <span>{p.summary}</span>}<pre data-testid={`layout-${p.title}`}>{JSON.stringify(p.layout)}</pre></div> }));
 
 import HomePage from "../pages/HomePage";
+import AppShell from "../components/layout/AppShell";
 import { MetadataPanel } from "../components/ui";
 import AudioPlayer from "../components/audio/AudioPlayer";
 import AudioUploader from "../components/audio/AudioUploader";
@@ -15,6 +16,19 @@ import { FilterResponseChart } from "../components/charts";
 import { SessionProvider } from "../context/Session";
 import { StepGuard } from "../components/workflow/WorkflowShell";
 import * as api from "../api";
+
+describe("navigation cleanup and brand identity", () => {
+  it("does not render API Online indicator or Documentation navigation link", () => {
+    render(<MemoryRouter><SessionProvider><AppShell /></SessionProvider></MemoryRouter>);
+    expect(screen.queryByText(/API online/i)).toBeNull();
+    expect(screen.queryByText(/API offline/i)).toBeNull();
+    expect(screen.queryByText(/API checking/i)).toBeNull();
+    expect(screen.queryByRole("link", { name: /^Documentation$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /remove background/i })).toBeNull();
+    expect(screen.getByRole("link", { name: /ClearVoice/i })).toHaveAttribute("href", "/clearvoice");
+    expect(screen.getByRole("link", { name: /RoadSonic/i })).toHaveAttribute("href", "/roadsonic");
+  });
+});
 
 describe("landing page", () => {
   const renderHome = () => render(<MemoryRouter><HomePage /></MemoryRouter>);
