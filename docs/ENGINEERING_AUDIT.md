@@ -56,3 +56,11 @@ Rule-based candidate detector; synthetic evaluation (22 fixtures: silence, noise
 4. Add the Playwright workflow to the repo as an automated test.
 5. A hard per-request timeout needs a process pool; not done.
 6. Conventional filters cannot isolate one speaker from overlapping speech; that needs source separation (not implemented, not claimed).
+
+
+---
+## Frontend redesign pass (second task)
+
+Changes: central API client with cancellation and in-flight counter; session strip (file, rate, channels, duration, live processing status); landing page with the required copy, concepts, architecture and limitations sections; shared metadata panel (file size, format, "not calculated" handling); audio player with mute, speed, keyboard control and readiness handling; spectrum log-axis floor; filter response with measured passband/transition/stopband shading and a causal-filter phase chart; lazy cartesian-only Plotly (main bundle 5 MB -> 315 kB); accessibility fixes found by axe (step-label contrast, invalid ARIA on event rows, focusable scrollable tables, mobile overflow).
+Backend changes: `file_size_bytes` in upload metadata; `phase_deg`/`phase_note` in filter responses; spectral peak finder now requires a peak to stand >= 8x above the local mean spectrum and >= 2 Hz from any stronger peak (one siren previously listed five adjacent bins as "dominant peaks"); regression tests in `backend/tests/test_peaks.py`.
+Verification: see `frontend/README.md` ("Verified results").

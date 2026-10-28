@@ -20,7 +20,7 @@ export function ReviewStep() {
         {!e && <EmptyState title="Select an event" body="Choose one above or on the Events screen." />}
         {e && <>
           <section className="card stack"><h3>Event #{i! + 1} · {e.start_s.toFixed(3)}–{e.end_s.toFixed(3)} s ({e.duration_s.toFixed(2)} s)</h3><p>{e.explanation}</p>
-            <div className="table-wrap"><table><thead><tr><th>Rule</th><th>Result</th></tr></thead><tbody>{Object.entries(e.rules).map(([k, v]: any) => <tr key={k}><td>{k}</td><td>{v ? "✔ passed" : "✖ not met"}</td></tr>)}</tbody></table></div>
+            <div className="table-wrap" tabIndex={0} role="region" aria-label="Scrollable table"><table><thead><tr><th>Rule</th><th>Result</th></tr></thead><tbody>{Object.entries(e.rules).map(([k, v]: any) => <tr key={k}><td>{k}</td><td>{v ? "✔ passed" : "✖ not met"}</td></tr>)}</tbody></table></div>
             <p className="muted">Heuristic score {e.heuristic_score.toFixed(2)} = {e.score_definition}. It is not a calibrated probability.</p></section>
           <Plot title="Dominant frequency during the event" note={`Observed pattern: ${e.trajectory.pattern}. Describes the track only; it does not classify the siren type.`}
             data={[{ x: e.trajectory.time_s, y: e.trajectory.freq_hz, type: "scatter", mode: "lines+markers", marker: { size: 4, color: c.event }, line: { color: c.event }, name: "dominant frequency" }]} layout={{ xaxis: { title: "Time (s)" }, yaxis: { title: "Frequency (Hz)" } }} />
@@ -46,14 +46,14 @@ export function SummaryStep() {
     <WorkflowShell module="roadsonic" step="summary" title="Detection summary and evaluation" hideNext>
       <section className="card stack"><h3>Detector output</h3>
         <div className="tiles"><Metric value={r.events.length} label="Candidate events" /><Metric value={`${r.summary.total_event_s.toFixed(2)} s`} label={`Total event time (${(100 * r.summary.event_fraction).toFixed(0)} %)`} /><Metric value={r.detect_on} label="Audio analysed" /><Metric value={`${r.processing_s.toFixed(2)} s`} label="Processing time" /></div>
-        {r.events.length > 0 && <div className="table-wrap"><table><thead><tr><th>#</th><th>Start (s)</th><th>End (s)</th><th>Duration (s)</th><th>Score*</th><th>Pattern</th></tr></thead><tbody>
+        {r.events.length > 0 && <div className="table-wrap" tabIndex={0} role="region" aria-label="Scrollable table"><table><thead><tr><th>#</th><th>Start (s)</th><th>End (s)</th><th>Duration (s)</th><th>Score*</th><th>Pattern</th></tr></thead><tbody>
           {r.events.map((e: any, i: number) => <tr key={i}><td>{i + 1}</td><td>{e.start_s.toFixed(3)}</td><td>{e.end_s.toFixed(3)}</td><td>{e.duration_s.toFixed(2)}</td><td>{e.heuristic_score.toFixed(2)}</td><td>{e.trajectory.pattern}</td></tr>)}</tbody></table></div>}
         <p className="muted">*Heuristic evidence score, not a probability. Detection can be affected by distance, traffic noise, horns, speech, reverberation, vehicle motion and recording quality.</p></section>
       <section className="card stack"><h3>Evaluation against your own labels</h3>
         <p className="muted">Precision, recall and F1 need genuine ground truth. If you labelled the true siren intervals by listening, enter them (one per line: <code>start_seconds, end_seconds</code>). The numbers describe this recording and these settings only.</p>
         <label>Labelled intervals<textarea rows={4} value={truth} onChange={(e) => setTruth(e.target.value)} placeholder={"3.0, 7.0\n12.5, 15.0"} /></label>
         <div className="actions"><button className="btn" disabled={!truth.trim()} onClick={evaluate}>Compute metrics</button></div>{err && <ErrorPanel message={err} />}
-        {ev && <div className="table-wrap"><table><tbody><tr><td>TP / FP / FN</td><td>{ev.true_positives} / {ev.false_positives} / {ev.false_negatives}</td></tr>
+        {ev && <div className="table-wrap" tabIndex={0} role="region" aria-label="Scrollable table"><table><tbody><tr><td>TP / FP / FN</td><td>{ev.true_positives} / {ev.false_positives} / {ev.false_negatives}</td></tr>
           <tr><td>Precision · Recall · F1</td><td>{[ev.precision, ev.recall, ev.f1].map((v: any) => v == null ? "n/a" : v.toFixed(2)).join(" · ")}</td></tr>
           <tr><td>Mean start / end error</td><td>{ev.mean_abs_start_error_s == null ? "n/a" : `${ev.mean_abs_start_error_s.toFixed(2)} / ${ev.mean_abs_end_error_s.toFixed(2)} s`}</td></tr><tr><td>False alarms per minute</td><td>{ev.false_alarms_per_minute?.toFixed(2)}</td></tr></tbody></table><p className="muted">{ev.note}</p></div>}
         <p className="muted">No machine-learning classifier exists in this project, so there is no trained-model accuracy to report.</p></section>

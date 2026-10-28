@@ -23,7 +23,7 @@ export function DetectStep() {
             {done && !dirty && r.events.length === 0 && <EmptyState title="No candidate events" body="Nothing met every rule with these settings. That does not prove that no siren is present; a distant or masked siren can be missed." />}
             <div className="actions"><button className="btn" disabled={busy || !settings} onClick={() => run(settings, true)}>{busy ? "Detecting…" : done ? "Rerun detection" : "Run candidate detection"}</button>
               {done && !dirty && <Link className="btn ghost" to="/roadsonic/events">View event timeline</Link>}</div></section>
-          {done && <section className="card"><h3>Parameters used in the last run</h3><div className="table-wrap"><table><tbody>
+          {done && <section className="card"><h3>Parameters used in the last run</h3><div className="table-wrap" tabIndex={0} role="region" aria-label="Scrollable table"><table><tbody>
             {Object.entries({ ...r.config.detector, frame_ms: r.config.features.frame_ms, hop_ms: r.config.features.hop_ms, "band (Hz)": r.config.features.band_hz.join("–"), "audio analysed": r.detect_on }).map(([k, v]: any) => <tr key={k}><td>{k}</td><td className="mono">{String(v)}</td></tr>)}</tbody></table></div>
             <p className="muted">Evidence score = mean of tonal fraction, modulation and tonal strength (each 0–1). It ranks candidates; it is not a probability and is not calibrated.</p></section>}
         </div>

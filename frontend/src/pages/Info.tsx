@@ -9,7 +9,7 @@ export function Info({ kind }: { kind: "how" | "docs" }) {
   return (
     <div className="page stack"><h1>Documentation</h1>
       <section className="card"><p className="muted">Project documents live in the repository's <code>docs/</code> folder. Run the backend and open <code>http://127.0.0.1:8000/docs</code> for the interactive API reference.</p>
-        <div className="table-wrap"><table><thead><tr><th>Document</th><th>Contents</th></tr></thead><tbody>
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Scrollable table"><table><thead><tr><th>Document</th><th>Contents</th></tr></thead><tbody>
           <tr><td>README.md</td><td>Windows setup, run and test commands</td></tr><tr><td>docs/clearvoice.md</td><td>Mathematics, presets, limits, viva questions</td></tr><tr><td>docs/roadsonic.md</td><td>Detector design, benchmark, limits, viva questions</td></tr>
           <tr><td>docs/sonicsense_frontend.md</td><td>Routes, session model, design tokens, test report</td></tr><tr><td>docs/implementation_status.md</td><td>What is verified, unverified and missing</td></tr></tbody></table></div></section></div>);
 }

@@ -1,9 +1,11 @@
 import { type ReactNode } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, FileAudio, Loader2, CircleCheck } from "lucide-react";
 import { STEPS, blockedReason, nextStep, prevStep, redirectFor, stepIndex, stepStatus, type ModuleId } from "../../logic/workflow.ts";
 import { useSession, useSnapshot } from "../../context/Session";
 import { PageSkeleton } from "../ui";
+import { useInflight } from "../../hooks/useInflight";
+import { formatTime } from "../../logic/format.ts";
 
 const NAMES: Record<ModuleId, string> = { clearvoice: "ClearVoice", roadsonic: "RoadSonic" };
 const LABEL: Record<string, string> = { not_started: "Not started", current: "Current", completed: "Completed", blocked: "Locked" };
@@ -31,6 +33,21 @@ export function Stepper({ module, current }: { module: ModuleId; current: string
   );
 }
 
+/** Current recording + live processing status. The status comes from the API client's real in-flight request count. */
+export function SessionStrip({ module }: { module: ModuleId }) {
+  const { cv, rs } = useSession(), up = (module === "clearvoice" ? cv : rs).upload, busy = useInflight() > 0;
+  if (!up) return null;
+  const m = up.metadata;
+  return (
+    <div className="session-strip" aria-label="Current recording">
+      <span className="row"><FileAudio size={16} aria-hidden="true" /><b className="name">{up.file?.name ?? "Restored recording"}</b></span>
+      <span className="mono muted">{m.sample_rate_hz} Hz · {m.channels} ch · {formatTime(m.duration_s)}</span>
+      <span className={"chip " + (busy ? "warn" : "ok")} role="status" aria-live="polite">
+        {busy ? <><Loader2 size={13} className="spin" aria-hidden="true" /> Processing…</> : <><CircleCheck size={13} aria-hidden="true" /> Idle</>}</span>
+    </div>
+  );
+}
+
 export default function WorkflowShell({ module, step, title, intro, children, onNext, nextLabel, nextDisabled, nextBusy, hideNext }:
   { module: ModuleId; step: string; title: string; intro?: ReactNode; children: ReactNode; onNext?: () => Promise<boolean | void> | boolean | void; nextLabel?: string; nextDisabled?: boolean; nextBusy?: boolean; hideNext?: boolean }) {
   const nav = useNavigate(), loc = useLocation(), snap = useSnapshot(module);
@@ -44,6 +61,7 @@ export default function WorkflowShell({ module, step, title, intro, children, on
         <span className="chip mono" aria-label={`Step ${idx + 1} of ${total}`}>Step {idx + 1} of {total}</span></div>
       {module === "roadsonic" && <div className="banner caution" role="note"><b>Academic prototype.</b> Detected intervals are candidate siren events and are not certified emergency alerts.</div>}
       {notice && <div className="banner note" role="status">{notice}</div>}
+      <SessionStrip module={module} />
       <Stepper module={module} current={step} />
       {intro && <p className="muted">{intro}</p>}
       {children}

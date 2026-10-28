@@ -3,7 +3,7 @@ import WorkflowShell from "../../components/workflow/WorkflowShell";
 import { FilterResponseChart } from "../../components/charts";
 import { ErrorPanel, ProcessingStatus } from "../../components/ui";
 import { useSession } from "../../context/Session";
-import { call, postJson } from "../../api";
+import { call, isAborted, postJson } from "../../api";
 import { cutoffsFor, validateFilter, MAX_ORDER, MIN_ORDER } from "../../logic/filterValidation.ts";
 
 function DigitalFilter({ fs, id }: { fs: number; id: string }) {
@@ -15,8 +15,9 @@ function DigitalFilter({ fs, id }: { fs: number; id: string }) {
   const stale = cv.filter?.requestKey !== key;
   useEffect(() => {                                    // live theoretical response, debounced; invalid settings are never sent
     setPreview(null); if (errors.length) return;
-    const t = setTimeout(() => postJson(`/api/v1/clearvoice/${id}/filter/preview`, { filter_type: f.type, order: Number(f.order), cutoff_hz: cutoffs, method: f.method }).then(setPreview).catch((e) => setErr(e.message)), 350);
-    return () => clearTimeout(t);
+    const ctl = new AbortController();                 // a newer setting cancels the older request: a slow stale response cannot overwrite it
+    const t = setTimeout(() => postJson(`/api/v1/clearvoice/${id}/filter/preview`, { filter_type: f.type, order: Number(f.order), cutoff_hz: cutoffs, method: f.method }, ctl.signal).then(setPreview).catch((e) => { if (!isAborted(e)) setErr(e.message); }), 350);
+    return () => { clearTimeout(t); ctl.abort(); };
   }, [key]);                                           // eslint-disable-line react-hooks/exhaustive-deps
   async function apply() {
     if (errors.length) return; setBusy(true); setErr("");

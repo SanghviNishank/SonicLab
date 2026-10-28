@@ -30,10 +30,10 @@ export default function EventsPanel({ res, sel, onSelect, onPlay, pre, post, set
   const e = sel != null ? events[sel] : null;
   return (
     <div className="rs-events">
-      <div className="rs-event-list" role="list" aria-label="Candidate events">
+      <div className="rs-event-list" role="group" aria-label="Candidate events">
         {events.length === 0 && <div className="empty"><p><b>No candidate events.</b></p><p className="muted">Nothing met every rule. Try a lower-sensitivity threshold only if you expect a quieter or narrower-sweep siren, and expect more false alarms.</p></div>}
         {events.map((ev, i) => (
-          <button key={i} role="listitem" className={"rs-event-row" + (sel === i ? " sel" : "")} aria-pressed={sel === i} onClick={() => onSelect(i)}>
+          <button key={i} className={"rs-event-row" + (sel === i ? " sel" : "")} aria-pressed={sel === i} onClick={() => onSelect(i)}>
             <b>#{i + 1}</b><span>{ev.start_s.toFixed(2)}–{ev.end_s.toFixed(2)} s</span><span>{ev.duration_s.toFixed(2)} s</span>
             <span title={ev.score_definition}>score {ev.heuristic_score.toFixed(2)}</span><span className="rs-tag">candidate siren event</span>
           </button>))}
@@ -44,9 +44,9 @@ export default function EventsPanel({ res, sel, onSelect, onPlay, pre, post, set
         {e && <>
           <p><b>Event #{sel! + 1}</b> · {e.start_s.toFixed(3)}–{e.end_s.toFixed(3)} s · {e.duration_s.toFixed(3)} s · method: {e.method}</p>
           <p>{e.explanation}</p>
-          <div className="table-wrap"><table><thead><tr><th>Rule</th><th>Result</th></tr></thead><tbody>
+          <div className="table-wrap" tabIndex={0} role="region" aria-label="Scrollable table"><table><thead><tr><th>Rule</th><th>Result</th></tr></thead><tbody>
             {Object.entries(e.rules).map(([k, v]: any) => <tr key={k}><td>{k}</td><td>{v ? "✔ passed" : "✖ not met"}</td></tr>)}</tbody></table></div>
-          <div className="table-wrap"><table><thead><tr><th>Feature (event mean)</th><th>Value</th></tr></thead><tbody>
+          <div className="table-wrap" tabIndex={0} role="region" aria-label="Scrollable table"><table><thead><tr><th>Feature (event mean)</th><th>Value</th></tr></thead><tbody>
             <tr><td>Dominant frequency range</td><td>{e.features.f0_min_hz?.toFixed(0)}–{e.features.f0_max_hz?.toFixed(0)} Hz</td></tr>
             <tr><td>Tonal fraction / strength</td><td>{e.features.tonal_fraction.toFixed(2)} / {e.features.mean_tonal_ratio.toFixed(2)}</td></tr>
             <tr><td>Level</td><td>{e.features.mean_rms_db.toFixed(1)} dBFS</td></tr>

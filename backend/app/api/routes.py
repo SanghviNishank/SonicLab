@@ -77,7 +77,7 @@ async def upload(file: UploadFile = File(...)):
                                 "name": (file.filename or "unnamed")[:120]})
     meta = {"audio_id": audio_id, "sample_rate_hz": fs, "channels": x.shape[0], "samples_per_channel": x.shape[1],
             "duration_s": x.shape[1] / fs, "sample_format": dec["subtype"], "decoded_dtype": "float64",
-            "source_format": dec["source_format"], "decoder_warnings": dec["warnings"]}
+            "source_format": dec["source_format"], "decoder_warnings": dec["warnings"], "file_size_bytes": len(data)}
     a = store.get(audio_id, "audio"); a["meta"] = meta
     return {"metadata": meta, "statistics": st.audio_statistics(x, fs), "waveform": _wave_payload(x, fs)}
 
@@ -188,7 +188,9 @@ def filter_preview(audio_id: str, req: FilterPreviewReq):
                                   for fc in req.cutoff_hz]
     sub = np.unique(np.linspace(0, r["freqs_hz"].size - 1, 600).astype(int))
     return {"settings": p["settings"], "attenuation_at_cutoff": p["attenuation_at_cutoff"], "explanation": p["explanation"],
-            "response": {"freqs_hz": r["freqs_hz"][sub].tolist(), "magnitude_db": r["magnitude_db"][sub].tolist(), "effective": r["effective"]},
+            "response": {"freqs_hz": r["freqs_hz"][sub].tolist(), "magnitude_db": r["magnitude_db"][sub].tolist(), "effective": r["effective"],
+                         "phase_deg": np.degrees(r["phase_rad"][sub]).tolist(), "phase_note": ("Zero-phase (forward-backward) filtering has exactly zero phase response."
+                                                                                           if req.method == "zero_phase" else "Phase of a single causal pass, unwrapped.")},
             "engine_info": design_info}
 
 
@@ -214,7 +216,9 @@ def filter_audio(audio_id: str, req: FilterReq):
                             "before": before["spectrum"], "after": after["spectrum"]})
     return {"job_id": job, "processing_s": time.perf_counter() - t_start, "config": r["config"], "warnings": r["warnings"], "metrics": metrics, "metrics_engine_info": metrics_info,
             "response": {"freqs_hz": resp["freqs_hz"][sub].tolist(), "magnitude_db": resp["magnitude_db"][sub].tolist(),
-                         "effective": resp["effective"]},
+                         "effective": resp["effective"], "phase_deg": np.degrees(resp["phase_rad"][sub]).tolist(),
+                         "phase_note": ("Zero-phase (forward-backward) filtering has exactly zero phase response."
+                                        if req.method == "zero_phase" else "Phase of a single causal pass, unwrapped.")},
             "waveform_original": _wave_payload(x, fs), "waveform_filtered": _wave_payload(y, fs),
             "spectrum_original": before["spectrum"], "spectrum_filtered": after["spectrum"],
             "spectrogram_original": before["spectrogram"], "spectrogram_filtered": after["spectrogram"],

@@ -22,6 +22,7 @@ over time (so its peak is lower than its instantaneous amplitude). The result sa
 from __future__ import annotations
 
 import numpy as np
+from scipy.ndimage import uniform_filter1d
 from scipy.signal import find_peaks, get_window
 
 MAX_NFFT = 2 ** 22
@@ -124,7 +125,8 @@ def _window_kernel(delta: float, window: str) -> float:
 
 
 def find_spectral_peaks(freqs: np.ndarray, amp: np.ndarray, n_peaks: int = 5,
-                        min_rel_height: float = 0.05, window: str | None = "hann") -> list[dict]:
+                        min_rel_height: float = 0.05, window: str | None = "hann", min_peak_to_local_mean: float = 8.0,
+                        local_window_hz: float = 200.0, min_separation_hz: float = 2.0) -> list[dict]:
     """Dominant spectral peaks.
 
     Frequency: parabolic interpolation on log amplitude (measured max error 0.03 Hz at 2 Hz bin spacing, Hann).
@@ -133,6 +135,13 @@ def find_spectral_peaks(freqs: np.ndarray, amp: np.ndarray, n_peaks: int = 5,
     interpolated value of the older implementation.
     Bins within the window main lobe of 0 Hz are ignored: a DC offset leaks into them and would otherwise be
     reported as a spurious low-frequency "peak". A genuine tone closer to 0 Hz than that cannot be resolved.
+
+    A reported peak must (1) be a local maximum, (2) be at least `min_rel_height` of the largest peak, (3) stand at least
+    `min_peak_to_local_mean` (default 8x = 18 dB) above the mean spectrum level in a +-`local_window_hz` neighbourhood, and (4) be at least
+    `min_separation_hz` from every stronger reported peak. (3) and (4) stop the jagged local maxima of one tone's leakage lobe, or of
+    the plateau that a frequency-modulated sound (a siren) leaves, from being listed as several separate "peaks" (seen in the UI: five
+    peaks at 1396.0-1397.5 Hz for one siren recording). If nothing qualifies (a broad plateau), the single largest bin is still returned so
+    the list is never empty for a non-silent signal; such a peak is a band maximum, not a tone.
     These are estimates of spectral peaks, not proof of true source frequencies.
     """
     if amp.size < 5:
@@ -141,9 +150,20 @@ def find_spectral_peaks(freqs: np.ndarray, amp: np.ndarray, n_peaks: int = 5,
     ref = float(np.max(amp[guard + 1:])) if amp.size > guard + 1 else 0.0
     if ref <= 0:
         return []
-    idx, _ = find_peaks(amp, height=ref * min_rel_height)
-    idx = idx[idx > guard]
-    order = idx[np.argsort(amp[idx])[::-1]][:n_peaks]
+    df0 = freqs[1] - freqs[0]
+    w = int(min(amp.size, max(11, round(local_window_hz / df0))))
+    local_mean = uniform_filter1d(amp, size=w, mode="nearest")
+    cand, _ = find_peaks(amp, height=ref * min_rel_height)
+    cand = cand[(cand > guard) & (amp[cand] >= min_peak_to_local_mean * np.maximum(local_mean[cand], 1e-300))]
+    order = []
+    for k in cand[np.argsort(amp[cand])[::-1]]:                      # strongest first; drop anything too close to a stronger accepted peak
+        if all(abs(freqs[k] - freqs[j]) >= min_separation_hz for j in order):
+            order.append(int(k))
+        if len(order) == n_peaks:
+            break
+    if not order:
+        order = [guard + 1 + int(np.argmax(amp[guard + 1:]))]
+    order = np.array(order)
     df = freqs[1] - freqs[0]
     out = []
     for k in order:

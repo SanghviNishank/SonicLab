@@ -1,18 +1,19 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import WorkflowShell from "../../components/workflow/WorkflowShell";
 import { WaveformChart } from "../../components/charts";
 import { ErrorPanel } from "../../components/ui";
 import { useMarkLoaded, useSession } from "../../context/Session";
-import { postJson } from "../../api";
+import { isAborted, latest, postJson } from "../../api";
 
 export default function TimeStep() {
   const { cv } = useSession(), up = cv.upload, id = up.metadata.audio_id;
   const [range, setRange] = useState<[number, number] | null>(null), [ch, setCh] = useState(0), [res, setRes] = useState<any>(null), [err, setErr] = useState(""), [rev, setRev] = useState(0);
+  const next = useRef(latest()).current;
   useMarkLoaded("clearvoice", "time-analysis", !!up);
   async function measure() {
     setErr("");
     const a = range ? Math.max(0, range[0]) : 0, b = range ? Math.min(up.metadata.duration_s, range[1]) : up.metadata.duration_s;
-    try { setRes(await postJson(`/api/v1/audio/${id}/range-stats`, { start_s: a, end_s: b, channel: ch })); } catch (e: any) { setErr(e.message); setRes(null); }
+    try { setRes(await postJson(`/api/v1/audio/${id}/range-stats`, { start_s: a, end_s: b, channel: ch }, next())); } catch (e: any) { if (!isAborted(e)) { setErr(e.message); setRes(null); } }
   }
   const st = res?.statistics;
   return (

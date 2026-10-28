@@ -23,7 +23,7 @@ export default function FrequencyStep() {
         <section className="card"><div className="tiles"><div className="tile"><b>{sp.bin_spacing_hz.toFixed(4)} Hz</b><span>Bin spacing fs/N</span></div><div className="tile"><b>{sp.nominal_resolution_hz.toFixed(4)} Hz</b><span>Nominal resolution</span></div>
           <div className="tile"><b>{(fs / 2).toLocaleString()} Hz</b><span>Nyquist fs/2</span></div><div className="tile"><b>{sp.n_fft.toLocaleString()}</b><span>FFT length</span></div></div>
           <h3 style={{ marginTop: "1rem" }}>Dominant spectral peaks (estimates)</h3>
-          <div className="table-wrap"><table><thead><tr><th>#</th><th>Frequency (Hz)</th><th>Amplitude</th></tr></thead><tbody>{sp.peaks.map((p: any, i: number) => <tr key={i}><td>{i + 1}</td><td>{p.frequency_hz.toFixed(2)}</td><td>{p.amplitude.toFixed(5)}</td></tr>)}</tbody></table></div>
+          <div className="table-wrap" tabIndex={0} role="region" aria-label="Scrollable table"><table><thead><tr><th>#</th><th>Frequency (Hz)</th><th>Amplitude</th></tr></thead><tbody>{sp.peaks.map((p: any, i: number) => <tr key={i}><td>{i + 1}</td><td>{p.frequency_hz.toFixed(2)}</td><td>{p.amplitude.toFixed(5)}</td></tr>)}</tbody></table></div>
           {sp.peaks.length === 0 && <p className="muted">No clear peak: the signal may be silent or noise-like.</p>}</section>
         <section className="card"><h3>The math</h3><p className="eq">X[k] = Σₙ x[n] · exp(−j2πkn/N), &nbsp; f_k = k·fs/N, &nbsp; Δf = fs/N</p>
           <p className="muted">Zero-padding makes the plotted curve smoother but does not add real resolution; that is set by how long the signal is observed. Windowing trades leakage for width: compare Hann and rectangular above.</p></section></>}

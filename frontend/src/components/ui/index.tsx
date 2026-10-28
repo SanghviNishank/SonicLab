@@ -28,3 +28,16 @@ export function ConfirmDialog({ open, title, body, confirmLabel = "Confirm", dan
 }
 
 export function Metric({ value, label }: { value: ReactNode; label: string }) { return <div className="tile"><b>{value}</b><span>{label}</span></div>; }
+
+import { metadataRows } from "../../logic/metadata.ts";
+/** File information. Values come from the backend decode; anything it did not report is shown as "not calculated". */
+export function MetadataPanel({ upload, fileName, showEquation = true }: { upload: any; fileName?: string; showEquation?: boolean }) {
+  const rows = metadataRows(upload, fileName), m = upload?.metadata ?? {};
+  return (
+    <section className="card" aria-label="File information"><h3>File information</h3>
+      <dl className="meta-grid">{rows.map((r) => <div key={r.label} className={r.known ? "" : "unknown"} title={r.hint}><dt>{r.label}</dt><dd>{r.value}</dd></div>)}</dl>
+      {showEquation && Number.isFinite(m.sample_rate_hz) && <p className="muted"><span className="eq">x[n] = x(n·Ts)</span> with Ts = 1/fs = {(1 / m.sample_rate_hz).toExponential(3)} s: the file stores one measurement of the sound every Ts seconds. Hover a label for its meaning.</p>}
+      {(m.decoder_warnings ?? []).map((w: string, i: number) => <p key={i} className="warn">⚠ {w}</p>)}
+    </section>
+  );
+}

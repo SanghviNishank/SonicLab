@@ -131,3 +131,35 @@ test("formatDetail turns FastAPI validation lists into readable text", async () 
     "overrides.rumble.cutoff_hz: Input should be a valid number");
   assert.equal(formatDetail(undefined, "fallback"), "fallback");
 });
+
+test("filter regions are derived from the measured response", async () => {
+  const { classifyResponse, describeRegions } = await import("./filterRegions.ts");
+  const f = [0, 100, 200, 300, 400, 500], m = [0, -1, -10, -30, -50, -80];
+  const r = classifyResponse(f, m);
+  assert.deepEqual(r.map((x) => x.kind), ["pass", "transition", "stop"]);
+  assert.equal(r[0].f1, 200); assert.equal(r[2].f1, 500);
+  assert.equal(classifyResponse([0, 1], [-4, -4], -6)[0].kind, "pass");     // -6 dB threshold for zero-phase
+  assert.deepEqual(classifyResponse([0], [0]), []);
+  assert.match(describeRegions(r), /passband 0–200 Hz; transition band 200–400 Hz; stopband 400–500 Hz/);
+});
+
+test("player keyboard map and clamp", async () => {
+  const { actionForKey, clamp } = await import("./playerKeys.ts");
+  assert.deepEqual(actionForKey(" "), { type: "toggle" });
+  assert.deepEqual(actionForKey("ArrowLeft"), { type: "seek", delta: -5 });
+  assert.deepEqual(actionForKey("ArrowRight", true), { type: "seek", delta: 1 });
+  assert.deepEqual(actionForKey("m"), { type: "mute" });
+  assert.equal(actionForKey("x"), null);
+  assert.equal(clamp(9, 0, 5), 5); assert.equal(clamp(-1, 0, 5), 0);
+});
+
+test("metadata rows: known values formatted, unknown values never invented", async () => {
+  const { metadataRows } = await import("./metadata.ts");
+  const full = metadataRows({ metadata: { source_format: "WAV", sample_format: "PCM_16", decoded_dtype: "float64", file_size_bytes: 2048, sample_rate_hz: 16000, duration_s: 1.5, samples_per_channel: 24000, channels: 2 },
+    statistics: { per_channel: [{ peak_abs: 0.5, rms: 0.1 }, { peak_abs: 0.7, rms: 0.05 }] } }, "a.wav");
+  const get = (l: string) => full.find((r) => r.label === l)!;
+  assert.equal(get("File size").value, "2.0 KB"); assert.equal(get("Peak amplitude").value, "0.7000"); assert.equal(get("Samples / channel").value, "24,000");
+  assert.ok(full.every((r) => r.known));
+  const empty = metadataRows({ metadata: { sample_rate_hz: NaN }, statistics: { per_channel: [{ peak_abs: null }] } });
+  assert.ok(["File size", "Sample rate", "Peak amplitude", "RMS", "Format"].every((l) => empty.find((r) => r.label === l)!.value === "not calculated"));
+});

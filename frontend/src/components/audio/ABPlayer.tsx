@@ -16,7 +16,9 @@ export default function ABPlayer({ a, b }: { a: { label: string; src: string }; 
   };
   const seek = (t: number) => { if (ra.current) ra.current.currentTime = t; if (rb.current) rb.current.currentTime = t; setCur(t); };
   return (
-    <div className="stack" role="group" aria-label="A/B comparison player">
+    <div className="stack" role="group" aria-label="A/B comparison player" onKeyDown={(e) => { const t = e.target as HTMLElement; if (t.tagName === "INPUT" || t.tagName === "SELECT") return;
+      if (e.key === " " || e.key === "k") { e.preventDefault(); void toggle(); } else if (e.key === "a" || e.key === "A") setActive("a"); else if (e.key === "b" || e.key === "B") setActive("b");
+      else if (e.key === "ArrowLeft") { e.preventDefault(); seek(Math.max(0, cur - 5)); } else if (e.key === "ArrowRight") { e.preventDefault(); seek(Math.min(dur, cur + 5)); } }}>
       <audio ref={ra} src={a.src} preload="auto" onLoadedMetadata={(e) => setDur((e.target as HTMLAudioElement).duration)} onEnded={() => { rb.current?.pause(); setPlaying(false); }} onError={() => setErr(`${a.label} could not be loaded.`)}
         onTimeUpdate={(e) => { const t = (e.target as HTMLAudioElement).currentTime; setCur(t); const y = rb.current; if (y && Math.abs(y.currentTime - t) > 0.15) y.currentTime = t; }} />
       <audio ref={rb} src={b.src} preload="auto" onError={() => setErr(`${b.label} could not be loaded.`)} />
@@ -29,7 +31,7 @@ export default function ABPlayer({ a, b }: { a: { label: string; src: string }; 
       <div className="player" style={{ gridTemplateColumns: "1fr auto" }}>
         <input type="range" aria-label="Seek" min={0} max={dur || 0} step={0.01} value={Math.min(cur, dur || 0)} onChange={(e) => seek(Number(e.target.value))} />
         <span className="mono muted">{formatTime(cur)} / {formatTime(dur)}</span></div>
-      <p className="muted">Levels are not matched between A and B. Compare tone and noise, not loudness.</p>
+      <p className="muted">Levels are not matched between A and B. Compare tone and noise, not loudness. Keys: Space play/pause · A / B switch version · ←/→ seek 5 s.</p>
       {err && <p className="error" role="alert">{err}</p>}
     </div>
   );
