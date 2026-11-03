@@ -64,3 +64,12 @@ Rule-based candidate detector; synthetic evaluation (22 fixtures: silence, noise
 Changes: central API client with cancellation and in-flight counter; session strip (file, rate, channels, duration, live processing status); landing page with the required copy, concepts, architecture and limitations sections; shared metadata panel (file size, format, "not calculated" handling); audio player with mute, speed, keyboard control and readiness handling; spectrum log-axis floor; filter response with measured passband/transition/stopband shading and a causal-filter phase chart; lazy cartesian-only Plotly (main bundle 5 MB -> 315 kB); accessibility fixes found by axe (step-label contrast, invalid ARIA on event rows, focusable scrollable tables, mobile overflow).
 Backend changes: `file_size_bytes` in upload metadata; `phase_deg`/`phase_note` in filter responses; spectral peak finder now requires a peak to stand >= 8x above the local mean spectrum and >= 2 Hz from any stronger peak (one siren previously listed five adjacent bins as "dominant peaks"); regression tests in `backend/tests/test_peaks.py`.
 Verification: see `frontend/README.md` ("Verified results").
+
+
+---
+## Advanced features pass (third task)
+
+Added: Before vs After Studio (`features/studio`, `/clearvoice/{job}/levels`, optional backend loudness-matched download), Visual Filter Lab (`features/filterlab`), DSP Learning Assistant (`/learn`), Processing Report (`/clearvoice/{job}/processing-report`, PDF/HTML/summary), Presentation Mode (`features/presentation`).
+Defect found by the real-browser run and fixed: the filter preview used a 1024-point frequency grid while the applied filter returned 2048 points, so the "theoretical" and "actual" responses differed by up to 0.5 dB between samples on a steep slope. Both now use 2048 points (regression test in `backend/tests/test_studio_report.py`).
+Other fixes: nav header wrapped/overflowed at 1366 px and below 1180 px (hamburger now appears below 1180 px, never on desktop); scrollable presentation area focusable for keyboard users.
+Verification: backend 337 pytest, frontend 39 Vitest + 18 logic tests, typecheck and build clean, Playwright/axe 49/49 (core) and 105/105 (features) at 1366 px and 390 px.

@@ -11,7 +11,7 @@ from app.core.limits import heavy_slot, limited
 from app.processing import audio_io, statistics as st, fft_analysis as fa, spectrogram as sg
 from app.processing import filters as flt, comparison as cmp, voice as vc
 from app.matlab import engine_adapter
-from app.services import store, reports, report_builders as rb, roadsonic as rsvc, metrics_service, engine_verification, siren_model
+from app.services import store, reports, studio, processing_report, report_builders as rb, roadsonic as rsvc, metrics_service, engine_verification, siren_model
 from app.schemas.roadsonic import DetectReq, EvaluateReq
 from app.schemas.voice import VoiceOverrides
 from app.processing import enhance as enh
@@ -178,7 +178,7 @@ def filter_preview(audio_id: str, req: FilterPreviewReq):
     a = _audio(audio_id)
     try:
         p = flt.preview_response(req.filter_type, req.order, req.cutoff_hz, a["fs"], req.method)
-        fd, design_info = engine_adapter.filter_design_info(req.filter_type, req.order, req.cutoff_hz, a["fs"], req.method, 1024)
+        fd, design_info = engine_adapter.filter_design_info(req.filter_type, req.order, req.cutoff_hz, a["fs"], req.method, 2048)
     except engine_adapter.EngineError as e:
         raise HTTPException(503, str(e))
     except ValueError as e:                              # FilterError is a ValueError
@@ -211,7 +211,7 @@ def filter_audio(audio_id: str, req: FilterReq):
         raise HTTPException(422, str(e))
     resp = r["response"]
     sub = np.unique(np.linspace(0, resp["freqs_hz"].size - 1, 600).astype(int))
-    job = store.put("job", {"y": y.astype(np.float32), "fs": fs, "meta": a["meta"], "name": a["name"], "created": time.time(), "audio_id": audio_id,
+    job = store.put("job", {"y": y.astype(np.float32), "fs": fs, "meta": a["meta"], "name": a["name"], "created": time.time(), "audio_id": audio_id, "processing_s": time.perf_counter() - t_start,
                             "config": r["config"], "metrics": metrics, "warnings": r["warnings"], "x": x,
                             "before": before["spectrum"], "after": after["spectrum"]})
     return {"job_id": job, "processing_s": time.perf_counter() - t_start, "config": r["config"], "warnings": r["warnings"], "metrics": metrics, "metrics_engine_info": metrics_info,
@@ -278,7 +278,7 @@ def voice(audio_id: str, req: VoiceReq):
     except ValueError as e:                                   # includes FilterError
         raise HTTPException(422, str(e))
     cfg = {"pipeline": "voice", "preset": r["preset"], "stages": r["config"], "sample_rate": float(fs), "engine": r["engine"]}
-    job = store.put("job", {"y": y.astype(np.float32), "x": x, "fs": fs, "meta": a["meta"], "name": a["name"], "created": time.time(), "audio_id": audio_id, "config": cfg, "metrics": metrics, "warnings": r["warnings"],
+    job = store.put("job", {"y": y.astype(np.float32), "x": x, "fs": fs, "meta": a["meta"], "name": a["name"], "created": time.time(), "audio_id": audio_id, "processing_s": time.perf_counter() - t_start, "config": cfg, "metrics": metrics, "warnings": r["warnings"],
                             "history": r["history"], "quality": r["quality"],
                             "before": before["spectrum"], "after": after["spectrum"]})
     return {"job_id": job, "processing_s": time.perf_counter() - t_start, "config": cfg, "history": r["history"], "quality": r["quality"], "warnings": r["warnings"],
@@ -297,18 +297,44 @@ def _job(job_id: str) -> dict:
 
 
 @router.get("/clearvoice/{job_id}/download")
-def download(job_id: str, subtype: str = "float32"):
+def download(job_id: str, subtype: str = "float32", match_loudness: bool = False):
     j = _job(job_id)
     if "y" not in j:
         raise HTTPException(404, "this job has no processed audio to download")
-    if subtype == "float32": body, _ = audio_io.encode_wav(j["y"], j["fs"], "float32")    # encoded on demand: the job stores the signal once
+    y_out = j["y"]
+    if match_loudness:                                       # optional listening aid: scales the processed copy to the original's RMS; never stored
+        g = studio.match_gain_db(j["x"], j["y"])
+        if g is None:
+            raise HTTPException(422, "loudness matching is not possible: the original or the processed signal is digital silence")
+        y_out = (j["y"].astype(np.float64) * 10 ** (g / 20)).astype(np.float32)
+    if subtype == "float32": body, _ = audio_io.encode_wav(y_out, j["fs"], "float32")    # encoded on demand: the job stores the signal once
     elif subtype == "pcm16":
-        body, info = audio_io.encode_wav(j["y"], j["fs"], "pcm16")
+        body, info = audio_io.encode_wav(y_out, j["fs"], "pcm16")
         if info["clipped_samples"]:
             raise HTTPException(409, f"PCM16 export would clip {info['clipped_samples']} samples; download float32 instead")
     else: raise HTTPException(422, "subtype must be float32 or pcm16")
     return Response(body, media_type="audio/wav",
                     headers={"Content-Disposition": 'attachment; filename="clearvoice_filtered.wav"'})
+
+
+@router.get("/clearvoice/{job_id}/levels")
+def clearvoice_levels(job_id: str):
+    """Measured levels, clipping, durations and the optional loudness-match gain for the Before vs After Studio."""
+    j = _job(job_id)
+    if "y" not in j or "x" not in j:
+        raise HTTPException(404, "this job has no processed audio")
+    out = studio.levels(j["x"], j["y"], j["fs"])
+    if j["x"].shape == np.atleast_2d(j["y"]).shape:
+        diff = j["x"] - np.atleast_2d(j["y"]).astype(np.float64)
+        out["waveform_difference"] = _wave_payload(diff, j["fs"])
+        out["difference_note"] = "Original minus processed. For a causal filter it also contains the filter's time delay, so it is not a pure 'removed noise' signal."
+    return out
+
+
+@router.get("/clearvoice/{job_id}/processing-report")
+def clearvoice_processing_report(job_id: str):
+    """Structured report data (JSON) built from the stored job's real settings and measurements."""
+    return processing_report.build(_job(job_id))
 
 
 @router.get("/clearvoice/{job_id}/export", dependencies=[Depends(heavy_slot)])
@@ -490,12 +516,16 @@ def _report_response(model_fn, job, fmt: str, base: str):
             return Response(reports.to_pdf(model), media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{base}.pdf"'})
     except RuntimeError as e:
         raise HTTPException(501, str(e))
-    raise HTTPException(422, "format must be html or pdf")
+    raise HTTPException(422, "format must be html, pdf or summary")
 
 
 @router.get("/clearvoice/{job_id}/report", dependencies=[Depends(heavy_slot)])
 def clearvoice_report(job_id: str, format: str = "html"):
-    return _report_response(rb.clearvoice_report, _job(job_id), format, "clearvoice_report")
+    j = _job(job_id)
+    if format == "summary":
+        return Response(processing_report.to_markdown(processing_report.build(j)), media_type="text/markdown",
+                        headers={"Content-Disposition": 'attachment; filename="clearvoice_processing_summary.md"'})
+    return _report_response(lambda job: processing_report.to_model(processing_report.build(job), job), j, format, "clearvoice_report")
 
 
 @router.get("/roadsonic/{job_id}/report", dependencies=[Depends(heavy_slot)])

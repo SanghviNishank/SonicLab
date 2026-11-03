@@ -1,16 +1,14 @@
 import WorkflowShell from "../../components/workflow/WorkflowShell";
-import ABPlayer from "../../components/audio/ABPlayer";
-import { FilterResponseChart, SpectrogramChart, SpectrumChart, WaveformChart } from "../../components/charts";
+import BeforeAfterStudio from "../../features/studio/BeforeAfterStudio";
+import { FilterResponseChart, SpectrogramChart, SpectrumChart } from "../../components/charts";
 import { useMarkLoaded, useSession } from "../../context/Session";
-import { url } from "../../api";
 
 export default function ComparisonStep() {
   const { cv } = useSession(), up = cv.upload, r = cv.filter.result, id = up.metadata.audio_id, fs = up.metadata.sample_rate_hz;
   useMarkLoaded("clearvoice", "comparison", !!r);
   return (
     <WorkflowShell module="clearvoice" step="comparison" title="Original versus processed" nextLabel="Results and export" intro={`Processed with: ${cv.filter.label}.`}>
-      <section className="card"><h3>Listen: A/B</h3><ABPlayer a={{ label: "Original", src: url(`/api/v1/audio/${id}/file`) }} b={{ label: "Processed", src: url(`/api/v1/clearvoice/${r.job_id}/download`) }} /></section>
-      <WaveformChart original={r.waveform_original} filtered={r.waveform_filtered} title="Waveform: original vs processed" />
+      <BeforeAfterStudio audioId={id} jobId={r.job_id} fs={fs} waveOriginal={r.waveform_original} waveProcessed={r.waveform_filtered} settingsLabel={cv.filter.label} config={r.config} />
       <SpectrumChart xmax={Math.min(fs / 2, 8000)} title="Spectrum: original vs processed (same axes)" spectra={[{ name: "original", ...r.spectrum_original }, { name: "processed", ...r.spectrum_filtered }]} />
       {r.response && <FilterResponseChart response={r.response} cutoffs={r.config.cutoff_hz ?? []} fs={fs} />}
       <div className="grid2"><SpectrogramChart sg={r.spectrogram_original} title="Spectrogram - original" fmax={Math.min(fs / 2, 8000)} height={300} /><SpectrogramChart sg={r.spectrogram_filtered} title="Spectrogram - processed" fmax={Math.min(fs / 2, 8000)} height={300} /></div>

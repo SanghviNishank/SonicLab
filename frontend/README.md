@@ -36,16 +36,27 @@ No credentials or secrets are used or needed in the frontend.
 | `npm run dev` | Vite dev server |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run build` | typecheck + production build to `dist/` |
-| `npm run test` | Vitest + React Testing Library (jsdom, API mocked, Plotly mocked) |
+| `npm run test` | Vitest + React Testing Library (jsdom, API mocked, Plotly mocked): 39 tests |
 | `npm run test:logic` | Node test runner for the pure logic modules in `src/logic` |
 | `npm run test:all` | both of the above |
-| `node e2e/workflow.cjs <demo_audio_dir>` | Real Chromium + real backend checks (see below) |
+| `node e2e/workflow.cjs <demo_audio_dir>` | Real Chromium + real backend checks: core workflows, axe, schema, WAV (49 checks) |
+| `node e2e/features.cjs <demo_audio_dir>` | Real Chromium + real backend checks for the five advanced features (105 checks) |
 
 There is **no ESLint script**; type checking (`strict` TypeScript) is the static check.
 
 ### Real-browser / real-backend checks
 
 `e2e/workflow.cjs` needs the backend on :8000 and `npm run dev` on :5173, plus `playwright` and `axe-core` resolvable (`NODE_PATH`). It uploads a real recording, walks the ClearVoice and RoadSonic workflows at 1366 px and 390 px, runs an axe-core scan on each page, checks horizontal overflow and the landing headline, and calls the API directly to verify the upload schema, `file_size_bytes`, that the downloaded filtered WAV is a valid RIFF/WAVE with the original sample rate, channels and length, that invalid settings return 422, and that RoadSonic returns events. It exits non-zero on any failure.
+
+## Advanced features
+
+| Feature | Where | What it uses |
+|---|---|---|
+| **Before vs After Studio** | ClearVoice > Compare | The uploaded original and the backend-generated processed WAV; `GET /clearvoice/{job}/levels` for RMS, peak, clipping, duration and waveform difference. Synchronised A/B playback (drift is corrected at 0.15 s), volume, section loop, optional loudness-matched copy (`download?match_loudness=true`, scaled by the backend, never stored). Neither file is normalised by default. |
+| **Visual Filter Lab** | ClearVoice > Filter | Five filter cards (low-pass, high-pass, band-pass, band-stop, notch), log-frequency sliders, order, zero-phase option. The preview is `POST /filter/preview` (the backend's own design, same 2048-point grid as the applied filter); *Apply Filter* runs `POST /filter` on the real recording. A notch is a narrow Butterworth band-stop (the backend has no separate notch design). |
+| **DSP Learning Assistant** | `/learn` | 13 lessons in Beginner/Technical mode. "Your recording" sentences are built only from the session's real metadata and analysis; with no recording they say so. Experiments: sine/combined sines, sampling and aliasing, plus your own spectrum, filter result and spectrogram. Demo signals are labelled synthetic. No SNR is ever computed. |
+| **Processing Report** | ClearVoice > Results | `GET /clearvoice/{job}/processing-report`; PDF, HTML and summary exports from the same data; includes parameters and Python/NumPy/SciPy/app versions. |
+| **Presentation Mode** | header button and the session strip | Nine ClearVoice and nine RoadSonic steps with "What to say" notes. It renders the real session data; steps whose data is missing say so and offer the real action (analyse, apply filter, run detection). Exiting keeps the recording and results. |
 
 ## Structure
 
@@ -61,7 +72,7 @@ src/
   styles/tokens.css      design tokens (dark/light, per-module accent)
 ```
 
-Routes: `/`, `/clearvoice/{upload,overview,time-analysis,frequency-analysis,spectrogram,filter,comparison,results}`, `/roadsonic/{upload,overview,preprocess,features,detect,events,review,summary}`, `/how-it-works`, `/docs`.
+Routes: `/`, `/learn`, `/clearvoice/{upload,overview,time-analysis,frequency-analysis,spectrogram,filter,comparison,results}`, `/roadsonic/{upload,overview,preprocess,features,detect,events,review,summary}`, `/how-it-works`, `/docs`.
 
 Step completion and locking are derived from real results (`logic/workflow.ts`); deep links to a step whose prerequisite is missing are redirected with a notice. Uploading a new file clears the previous file's results. Each request stream uses "latest wins" cancellation so a slow stale response cannot overwrite a newer one. Plotly is loaded lazily on the first chart (main bundle ≈ 315 kB, 103 kB gzip; the cartesian-only Plotly chunk is ≈ 1.4 MB, 474 kB gzip, fetched only when a chart is shown).
 
@@ -70,11 +81,12 @@ Step completion and locking are derived from real results (`logic/workflow.ts`);
 | Check | Result |
 |---|---|
 | `npm run typecheck` | passes |
-| `npm run test` | 17 passed |
-| `npm run test:logic` | 13 passed |
+| `npm run test` | 39 passed |
+| `npm run test:logic` | 18 passed |
 | `npm run build` | succeeds |
 | `e2e/workflow.cjs` (Chromium, real backend) | 49/49 checks |
-| Backend `pytest` | 327 passed |
+| `e2e/features.cjs` (Chromium, real backend) | 105/105 checks |
+| Backend `pytest` | 337 passed |
 
 ## Known limitations
 
@@ -85,6 +97,10 @@ Step completion and locking are derived from real results (`logic/workflow.ts`);
 - Spectrogram and spectrum charts use decimated display data; statistics use every sample.
 - Audio is held in backend memory for about an hour; after that a reload returns to the upload step.
 - Tested in headless Chromium only; Firefox/Safari were not run. Performance on an Intel i3 / 16 GB machine was not measured here (the bundle was kept small and Plotly lazy-loaded for that reason).
+
+- Results live in the browser session: a full page reload restores the uploaded recording only, so analysis and filter results must be re-run (navigate with the in-app links to keep them).
+- Presentation Mode's demonstration filter (300-3400 Hz band-pass) is only a convenience; it is shown as such and runs the real backend.
+- Audio playback was verified in headless Chromium; browsers differ in how closely two `<audio>` elements stay aligned, so the page re-syncs them whenever they drift by more than 0.15 s.
 
 ## Troubleshooting
 

@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight, FileAudio, Loader2, CircleCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, FileAudio, Loader2, CircleCheck, Presentation } from "lucide-react";
+import { presentation } from "../../features/presentation/state";
 import { STEPS, blockedReason, nextStep, prevStep, redirectFor, stepIndex, stepStatus, type ModuleId } from "../../logic/workflow.ts";
 import { useSession, useSnapshot } from "../../context/Session";
 import { PageSkeleton } from "../ui";
@@ -38,16 +39,13 @@ export function SessionStrip({ module }: { module: ModuleId }) {
   const { cv, rs } = useSession(), up = (module === "clearvoice" ? cv : rs).upload, busy = useInflight() > 0;
   if (!up) return null;
   const m = up.metadata;
-  const hasResult = module === "clearvoice" ? !!cv.filter?.result : !!rs.res;
   return (
     <div className="session-strip" aria-label="Current recording">
       <span className="row"><FileAudio size={16} aria-hidden="true" /><b className="name">{up.file?.name ?? "Restored recording"}</b></span>
       <span className="mono muted">{m.sample_rate_hz} Hz · {m.channels} ch · {formatTime(m.duration_s)}</span>
-      <span className={"chip " + (busy ? "warn" : hasResult ? "ok" : "run")} role="status" aria-live="polite">
-        {busy ? <><Loader2 size={13} className="spin" aria-hidden="true" /> Processing audio…</>
-          : hasResult ? <><CircleCheck size={13} aria-hidden="true" /> Analysis complete</>
-          : <><CircleCheck size={13} aria-hidden="true" /> Ready to analyze</>}
-      </span>
+      <button className="btn ghost present-btn" style={{ marginLeft: "auto" }} onClick={() => presentation.start(module)}><Presentation size={14} aria-hidden="true" /> Presentation Mode</button>
+      <span className={"chip " + (busy ? "warn" : "ok")} role="status" aria-live="polite">
+        {busy ? <><Loader2 size={13} className="spin" aria-hidden="true" /> Processing…</> : <><CircleCheck size={13} aria-hidden="true" /> Idle</>}</span>
     </div>
   );
 }
@@ -61,7 +59,7 @@ export default function WorkflowShell({ module, step, title, intro, children, on
   async function go() { if (!next) return; if (onNext) { const ok = await onNext(); if (ok === false) return; } nav(`/${module}/${next}`); }
   return (
     <div className="page wf" data-module={module}>
-      <div className="wf-head"><div><div className="crumbs"><Link to="/">SignalSystem</Link> / <Link to={`/${module}/upload`}>{NAMES[module]}</Link> / {STEPS[module][idx]?.label}</div><h1>{title}</h1></div>
+      <div className="wf-head"><div><div className="crumbs"><Link to="/">SonicSense</Link> / <Link to={`/${module}/upload`}>{NAMES[module]}</Link> / {STEPS[module][idx]?.label}</div><h1>{title}</h1></div>
         <span className="chip mono" aria-label={`Step ${idx + 1} of ${total}`}>Step {idx + 1} of {total}</span></div>
       {module === "roadsonic" && <div className="banner caution" role="note"><b>Academic prototype.</b> Detected intervals are candidate siren events and are not certified emergency alerts.</div>}
       {notice && <div className="banner note" role="status">{notice}</div>}

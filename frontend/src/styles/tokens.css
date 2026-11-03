@@ -1,38 +1,32 @@
-/* SignalSystem design tokens. Professional acoustic research laboratory aesthetic. */
+/* SonicSense design tokens. Dark is the primary theme; light is a full alternative. */
 :root {
-  --font-ui: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
-  --bg: #060a14; --bg-2: #0a1022; --surface: #0e172e; --surface-2: #142140; --border: rgba(56, 189, 248, 0.15); --border-strong: rgba(56, 189, 248, 0.3);
-  --fg: #f0f4fc; --muted: #94a5c4; --faint: #5a6e8e;
-  --cyan: #00f0ff; --violet: #8b5cf6; --mint: #10b981; --amber: #f59e0b; --red: #f43f5e; --teal: #14b8a6;
-  --accent: var(--cyan); --accent-2: var(--violet); --on-accent: #020c14;
+  --font-ui: Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
+  --bg: #060b17; --bg-2: #0a1222; --surface: #0e182b; --surface-2: #132038; --border: #1f3050; --border-strong: #2c4268;
+  --fg: #eaf0fa; --muted: #93a3bf; --faint: #5d7090;
+  --cyan: #22d3ee; --violet: #8b7cf6; --mint: #4ade80; --amber: #ffb020; --red: #ff6b6b;
+  --accent: var(--cyan); --accent-2: var(--violet); --on-accent: #031018;
   --ok: var(--mint); --warn: var(--amber); --err: var(--red);
   --space-1: .25rem; --space-2: .5rem; --space-3: .75rem; --space-4: 1rem; --space-5: 1.5rem; --space-6: 2.5rem; --space-7: 4rem;
   --radius-s: 6px; --radius: 10px; --radius-l: 16px;
-  --shadow: 0 1px 0 rgba(255,255,255,.05) inset, 0 12px 36px -10px rgba(0,0,0,.7);
-  --glow-cyan: 0 0 24px -4px rgba(0, 240, 255, 0.28);
-  --glow-violet: 0 0 24px -4px rgba(139, 92, 246, 0.28);
-  --glow-amber: 0 0 24px -4px rgba(245, 158, 11, 0.28);
-  --dur: 200ms; --dur-page: 300ms; --ease: cubic-bezier(.16, 1, .3, 1);
-  --chart-1: #00f0ff; --chart-2: #8b5cf6; --chart-3: #10b981; --chart-event: #f59e0b; --chart-grid: rgba(148, 165, 196, 0.15);
+  --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 10px 30px -12px rgba(0,0,0,.6);
+  --dur: 180ms; --ease: cubic-bezier(.2,.7,.2,1);
+  --chart-1: #22d3ee; --chart-2: #8b7cf6; --chart-3: #4ade80; --chart-event: #ffb020; --chart-grid: rgba(147,163,191,.18);
   /* aliases used by RoadSonic components */
   --rs-bg: var(--bg-2); --rs-panel: var(--surface); --rs-line: var(--border); --rs-fg: var(--fg); --rs-mute: var(--muted);
   --rs-cyan: var(--cyan); --rs-cand: var(--amber); --rs-ok: var(--mint);
   color-scheme: dark;
 }
 :root[data-theme="light"] {
-  --bg: #f5f8fc; --bg-2: #eaf0f9; --surface: #ffffff; --surface-2: #f0f4fa; --border: #cbd6e8; --border-strong: #9fb2cf;
-  --fg: #0d192e; --muted: #475a7a; --faint: #7385a3;
-  --cyan: #0284c7; --violet: #6366f1; --mint: #059669; --amber: #d97706; --red: #e11d48; --teal: #0d9488; --on-accent: #ffffff;
-  --shadow: 0 1px 2px rgba(15,30,60,.06), 0 10px 28px -12px rgba(15,30,60,.16);
-  --glow-cyan: 0 0 16px -2px rgba(2, 132, 199, 0.2);
-  --glow-violet: 0 0 16px -2px rgba(99, 102, 241, 0.2);
-  --glow-amber: 0 0 16px -2px rgba(217, 119, 6, 0.2);
-  --chart-1: #0284c7; --chart-2: #6366f1; --chart-3: #059669; --chart-event: #d97706; --chart-grid: rgba(71,90,122,.14);
+  --bg: #f4f7fc; --bg-2: #e9eff8; --surface: #ffffff; --surface-2: #f1f5fb; --border: #cfd9ea; --border-strong: #aebcd4;
+  --fg: #0e1a2e; --muted: #4a5d7c; --faint: #7a8bab;
+  --cyan: #0a7aa8; --violet: #5b4bd6; --mint: #15803d; --amber: #a85f00; --red: #c62828; --on-accent: #ffffff;
+  --shadow: 0 1px 2px rgba(15,30,60,.08), 0 8px 24px -12px rgba(15,30,60,.18);
+  --chart-1: #0a7aa8; --chart-2: #5b4bd6; --chart-3: #15803d; --chart-event: #a85f00; --chart-grid: rgba(60,80,120,.15);
   color-scheme: light;
 }
-/* module identities: ClearVoice = cyan/violet (precision DSP); RoadSonic = amber/teal (acoustic detection) */
+/* module identities: ClearVoice = cyan/violet (calm, scientific); RoadSonic = amber-led (operational) */
 [data-module="clearvoice"] { --accent: var(--cyan); --accent-2: var(--violet); }
-[data-module="roadsonic"] { --accent: var(--amber); --accent-2: var(--teal); --on-accent: #150d00; }
+[data-module="roadsonic"] { --accent: var(--amber); --accent-2: var(--cyan); --on-accent: #1a1100; }
 :root[data-theme="light"] [data-module="roadsonic"] { --on-accent: #ffffff; }
 @media (prefers-reduced-motion: reduce) { :root { --dur: 0.01ms; } *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }

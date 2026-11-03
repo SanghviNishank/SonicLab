@@ -163,3 +163,88 @@ test("metadata rows: known values formatted, unknown values never invented", asy
   const empty = metadataRows({ metadata: { sample_rate_hz: NaN }, statistics: { per_channel: [{ peak_abs: null }] } });
   assert.ok(["File size", "Sample rate", "Peak amplitude", "RMS", "Format"].every((l) => empty.find((r) => r.label === l)!.value === "not calculated"));
 });
+
+test("studio helpers", async () => {
+  const s = await import("./studio.ts");
+  assert.equal(s.needsResync(1, 1.1), false); assert.equal(s.needsResync(1, 1.2), true);
+  assert.equal(s.comparableDuration(10, 9.5), 9.5); assert.equal(s.comparableDuration(0, 3), 3); assert.equal(s.comparableDuration(NaN, NaN), 0);
+  assert.equal(s.normalizeSection(1, 3, 10).section?.end, 3);
+  assert.ok(s.normalizeSection(5, 4, 10).error); assert.ok(s.normalizeSection(0, 11, 10).error); assert.ok(s.normalizeSection(1, 1.1, 10).error);
+  assert.equal(s.sectionAction(2.9, { start: 1, end: 3 }, true), "none"); assert.equal(s.sectionAction(3, { start: 1, end: 3 }, true), "loop");
+  assert.equal(s.sectionAction(3.1, { start: 1, end: 3 }, false), "stop"); assert.equal(s.sectionAction(99, null, true), "none");
+  assert.equal(s.fmtDb(null), "n/a");
+  const rows = s.levelRows({ original: { channels: [{ rms: 0.2, peak: 0.5, rms_dbfs: -13.98, peak_dbfs: -6.02, clipped_samples: 0 }] }, processed: { channels: [{ rms: 0.1, peak: 0.4, rms_dbfs: -20, peak_dbfs: -7.96, clipped_samples: 0 }] } });
+  assert.equal(rows.length, 3); assert.equal(rows[0].change, "-6.0 dB"); assert.equal(rows[2].change, "0");
+  assert.equal(s.processedUrl("http://h", "j1", true), "http://h/api/v1/clearvoice/j1/download?match_loudness=true");
+  assert.equal(s.processedUrl("http://h", "j1", false), "http://h/api/v1/clearvoice/j1/download");
+});
+
+test("filter lab maps UI to the backend request and validates", async () => {
+  const L = await import("./filterLab.ts");
+  const base = L.DEFAULT_LAB;
+  assert.deepEqual(L.toBackend({ ...base, type: "lowpass", f1: 800 }), { filter_type: "lowpass", cutoff_hz: [800], method: "zero_phase", order: 4 });
+  assert.deepEqual(L.toBackend({ ...base, type: "bandpass", f1: 300, f2: 3400, zeroPhase: false }), { filter_type: "bandpass", cutoff_hz: [300, 3400], method: "causal", order: 4 });
+  assert.deepEqual(L.toBackend({ ...base, type: "notch", centre: 1000, bandwidth: 100 }).cutoff_hz, [950, 1050]);
+  assert.equal(L.toBackend({ ...base, type: "notch" }).filter_type, "bandstop");
+  assert.deepEqual(L.validateLab(base, 16000), []);
+  assert.ok(L.validateLab({ ...base, type: "highpass", f1: 9000 }, 16000).length);
+  assert.ok(L.validateLab({ ...base, type: "notch", centre: 50, bandwidth: 200 }, 16000).length);          // lower edge would be negative
+  assert.ok(L.validateLab({ ...base, type: "notch", centre: 7990, bandwidth: 100 }, 16000).length);        // upper edge above Nyquist
+  assert.ok(L.validateLab({ ...base, type: "bandpass", f1: 3000, f2: 1000 }, 16000).length);
+  assert.ok(L.validateLab({ ...base, order: 13 }, 16000).length);
+  for (const hz of [20, 100, 1000, 7840]) assert.ok(Math.abs(L.sliderToHz(L.hzToSlider(hz, 16000), 16000) - hz) / hz < 0.02);
+  assert.equal(L.sliderToHz(0, 16000), 20); assert.ok(L.sliderToHz(1000, 16000) < 8000);
+  const a = { freqs_hz: [0, 100, 200, 300], magnitude_db: [0, -3, -20, -40] }, b = { freqs_hz: [0, 150, 300], magnitude_db: [0, -11.5, -40] };
+  assert.ok((L.maxResponseDifferenceDb(a, a) ?? 1) < 1e-12); assert.ok((L.maxResponseDifferenceDb(a, b) ?? 0) > 1);
+  assert.equal(L.maxResponseDifferenceDb({ freqs_hz: [0, 1], magnitude_db: [0, 0] }, { freqs_hz: [5, 6], magnitude_db: [0, 0] }), null);
+  const sm = L.retainedSummary([{ kind: "pass", f0: 0, f1: 900 }, { kind: "transition", f0: 900, f1: 1500 }, { kind: "stop", f0: 1500, f1: 8000 }]);
+  assert.equal(sm.kept, "0–900 Hz"); assert.equal(sm.reduced, "1500–8000 Hz");
+});
+
+test("DSP demo helpers are numerically correct", async () => {
+  const D = await import("./dspDemo.ts");
+  const fs = 8000, n = 1024, f = 125 * 8;            // bin-centred: 1000 Hz = bin 128
+  const sp = D.amplitudeSpectrum(D.sine(f, 0.5, fs, n), fs);
+  const k = sp.amp.indexOf(Math.max(...sp.amp)); assert.ok(Math.abs(sp.freqs[k] - 1000) < 1e-9); assert.ok(Math.abs(sp.amp[k] - 0.5) < 0.01);
+  const two = D.amplitudeSpectrum(D.add(D.sine(500, 0.3, fs, n), D.sine(1500, 0.2, fs, n)), fs);
+  const top = [...two.amp.keys()].sort((a, b) => two.amp[b] - two.amp[a]).slice(0, 2).map((i) => Math.round(two.freqs[i])).sort((a, b) => a - b);
+  assert.deepEqual(top, [500, 1500]);
+  assert.throws(() => D.fftInPlace(new Float64Array(6), new Float64Array(6)));
+  assert.equal(D.aliasFrequency(900, 1000), 100); assert.equal(D.aliasFrequency(300, 1000), 300); assert.equal(D.aliasFrequency(1100, 1000), 100);
+  assert.equal(D.isAliased(600, 1000), true); assert.equal(D.isAliased(500, 1000), false);
+});
+
+test("learning facts come only from the session and lessons never invent values", async () => {
+  const { buildFacts } = await import("./learnFacts.ts");
+  const { LESSONS } = await import("../features/learn/lessons.ts");
+  const none = buildFacts({ upload: null }, { upload: null });
+  assert.equal(none.source, null);
+  assert.ok(LESSONS.every((l) => l.yours(none) === null || l.id === "never"), "no personal sentence without a recording");
+  const cv = { upload: { file: { name: "a.wav" }, metadata: { sample_rate_hz: 44100, channels: 1, duration_s: 2, samples_per_channel: 88200 }, statistics: { per_channel: [{ peak_abs: 0.5, rms: 0.1 }] } },
+    analysis: { spectrum: { window: "hann", bin_spacing_hz: 0.5, peaks: [{ frequency_hz: 1396.5, amplitude: 0.02 }] } },
+    filter: { label: "x", result: { config: { filter_type: "highpass", cutoff_hz: [200], order: 4, method: "zero_phase" }, metrics: { per_channel: [{ rms_before: 0.1, rms_after: 0.08 }] } } } };
+  const f = buildFacts(cv, { upload: null });
+  const by = (id: string) => LESSONS.find((l) => l.id === id)!.yours(f)!;
+  assert.match(by("rate"), /44,100 samples per second/); assert.match(by("nyquist"), /22050 Hz/); assert.match(by("fft"), /1396.5 Hz/);
+  assert.match(by("amplitude"), /0\.5/); assert.match(by("rms"), /0\.1.*0\.08.*0\.1/); assert.match(by("filter"), /high-pass filter with a cutoff of 200 Hz.*rumble/);
+  assert.match(by("snr"), /does not report an SNR/); assert.match(by("noise"), /not applied noise reduction/);
+  assert.equal(LESSONS.length, 13); assert.ok(LESSONS.every((l) => l.why && l.beginner.length && l.technical.length));
+  const rs = buildFacts({ upload: null }, { upload: cv.upload, res: { spectrum: cv.analysis.spectrum }, detected: true });
+  assert.equal(rs.source, "roadsonic"); assert.equal(rs.filter, undefined);
+});
+
+test("presentation steps and availability", async () => {
+  const P = await import("../features/presentation/steps.ts");
+  assert.equal(P.CLEARVOICE_STEPS.length, 9); assert.equal(P.ROADSONIC_STEPS.length, 9);
+  assert.deepEqual(P.CLEARVOICE_STEPS.map((s) => s.title), ["Introduction", "Upload", "Waveform", "Frequency analysis", "Filtering", "Processing", "Audio comparison", "Results", "Conclusion"]);
+  const none = { hasUpload: false, hasAnalysis: false, hasFilter: false, hasDetection: false };
+  const cmp = P.CLEARVOICE_STEPS.find((s) => s.id === "comparison")!;
+  assert.deepEqual(P.stepReady(cmp, none), { ready: false, missing: "Upload a recording first." });
+  assert.equal(P.stepReady(cmp, { ...none, hasUpload: true }).missing, "Apply a filter to the recording first.");
+  assert.equal(P.stepReady(cmp, { ...none, hasUpload: true, hasFilter: true }).ready, true);
+  assert.equal(P.stepReady(P.CLEARVOICE_STEPS[0], none).ready, true);
+  assert.equal(P.clampStep(-3, 9), 0); assert.equal(P.clampStep(99, 9), 8); assert.equal(P.progressLabel(2, 9), "Step 3 of 9");
+  const ev = P.ROADSONIC_STEPS.find((s) => s.id === "events")!, f0 = { source: "roadsonic" as const, peaks: [], hasSpectra: false, hasSpectrogram: false };
+  assert.match(ev.say({ ...f0, events: 0 }), /no candidate events.*does not prove/); assert.match(ev.say({ ...f0, events: 2 }), /2 candidate events/); assert.doesNotMatch(ev.say(f0), /flagged/);
+  assert.ok([...P.CLEARVOICE_STEPS, ...P.ROADSONIC_STEPS].every((s) => s.say(f0).length > 40 && !/\b(siren (was|is) detected|noise (was|has been) removed)\b/i.test(s.say(f0))));
+});
